@@ -6,7 +6,6 @@
         <artifactId>jboss-parent</artifactId>
         <version>10</version>
     </parent>
-    <groupId>org.jboss</groupId>
     <artifactId>tamper-detecting-audit-log</artifactId>
     <version>1.0.0.Alpha1-SNAPSHOT</version>
     <name>Tamper Detecting Audit Log</name>
@@ -15,7 +14,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>2.1</version>
                 <configuration>
                     <debug>true</debug>
                     <source>1.6</source>
