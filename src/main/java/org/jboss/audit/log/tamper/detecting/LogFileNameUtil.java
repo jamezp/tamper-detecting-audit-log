@@ -37,9 +37,9 @@ import java.util.regex.Pattern;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 class LogFileNameUtil {
-    private static final Pattern PATTERN = Pattern.compile("audit\\.*-\\.*-\\.*.dat");
+    private static final Pattern PATTERN = Pattern.compile("audit.*-.*-.*.dat");
 
-    private final AtomicInteger lastLogSequence = new AtomicInteger(-1);
+    private final static AtomicInteger lastLogSequence = new AtomicInteger(-1);
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH_mm_ssz", Locale.UK);
     private final File logFileDir;
 
@@ -118,14 +118,13 @@ class LogFileNameUtil {
         return getPreviousLogFilename(null);
     }
 
-    private Calendar getDatestamp(String sawsLogFilename) {
+    private Calendar getDatestamp(String logName) {
 
         Calendar thisDate = new GregorianCalendar();
         dateFormat.setCalendar(thisDate);
         try {
-            Date d1 = dateFormat.parse(sawsLogFilename, new java.text.ParsePosition(4));
+            Date d1 = dateFormat.parse(logName, new java.text.ParsePosition(5));
             thisDate.setTime(d1);
-
         } catch (Exception e) {
             // TODO better logging
             e.printStackTrace();
@@ -138,4 +137,5 @@ class LogFileNameUtil {
     public int getLastLogSequence() {
         return lastLogSequence.get();
     }
+
 }

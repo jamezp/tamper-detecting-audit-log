@@ -31,6 +31,8 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -41,23 +43,27 @@ class LogWriter implements Runnable {
     private final BlockingQueue<LogRecord> recordQueue;
     private final LogFileNameUtil logFileNameUtil;
     private final byte[] secureRandomBytes = new byte[20];
+    private final TrustedLocation trustedLocation;
     private volatile byte[] accumulatedHash;
     private final MessageDigest accumulativeDigest;
-    private volatile int currentRecordCount;
+    private final AtomicBoolean doneThread = new AtomicBoolean(false);
+    private final CountDownLatch doneLatch = new CountDownLatch(1);
+    private volatile int currentSequenceNumber;
     private volatile File currentLogFile;
     private volatile RandomAccessFile currentRandomAccessFile;
     private volatile SecretKey symmetricKeyInLog = null;
     private volatile int lastRecordLength;
 
-    private LogWriter(KeyManager keyManager, File logFileDir, BlockingQueue<LogRecord> recordQueue) {
+    private LogWriter(KeyManager keyManager, File logFileDir, BlockingQueue<LogRecord> recordQueue, TrustedLocation trustedLocation) {
         this.keyManager = keyManager;
         this.recordQueue = recordQueue;
         logFileNameUtil = new LogFileNameUtil(logFileDir);
         this.accumulativeDigest = createMessageDigest();
+        this.trustedLocation = trustedLocation;
     }
 
-    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogRecord> recordQueue) {
-        LogWriter writer = new LogWriter(keyManager, logFileDir, recordQueue);
+    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogRecord> recordQueue, TrustedLocation trustedLocation) {
+        LogWriter writer = new LogWriter(keyManager, logFileDir, recordQueue, trustedLocation);
         writer.createNewLogFile();
         return writer;
     }
@@ -74,7 +80,7 @@ class LogWriter implements Runnable {
         final File file = logFileNameUtil.generateNewLogFileName();
         accumulativeDigest.reset();
         accumulativeDigest.update(file.getName().getBytes());
-        currentRecordCount = 0;
+        currentSequenceNumber = 0;
         currentLogFile = file;
         try {
             currentRandomAccessFile = new RandomAccessFile(file, "rw");
@@ -122,21 +128,27 @@ class LogWriter implements Runnable {
         logMessage(keyManager.getSigningPublicKeyCert(), RecordType.CERTIFICATE, EncryptionType.NONE);
         writeSignature(RecordType.HEADER_SIGNATURE);
 
+        trustedLocation.write(this);
         return file;
     }
 
 
     @Override
     public void run() {
-        while (true) {
-            try {
-                LogRecord logRecord = recordQueue.take();
-                logMessage(logRecord.getData(), logRecord.getType(), EncryptionType.NONE);
-
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
+        try {
+            while (!doneThread.get()) {
+                try {
+                    LogRecord logRecord = recordQueue.take();
+                    logMessage(logRecord.getData(), logRecord.getType(), EncryptionType.NONE);
+                    trustedLocation.write(this);
+                    logRecord.logged();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
+        } finally {
+            doneLatch.countDown();
         }
     }
 
@@ -152,7 +164,7 @@ class LogWriter implements Runnable {
         if (encryptionType == EncryptionType.ASSYMETRIC) {
             final int recordLength = HEADER_LENGTH + OUTPUTSIZE + keyManager.getHashAlgorithm().getHashLength();
             record = new byte[recordLength];
-            ++currentRecordCount;
+            ++currentSequenceNumber;
             appendHeader(record, type, encryptionType, lastRecordLength, recordLength);
             byte[] encryptedMessage;
             try {
@@ -177,7 +189,7 @@ class LogWriter implements Runnable {
                 byte[] encrypted = cipher.doFinal(message);
                 recordLength = HEADER_LENGTH + encrypted.length + keyManager.getHashAlgorithm().getHashLength();
                 record = new byte[recordLength];
-                ++currentRecordCount;
+                ++currentSequenceNumber;
                 appendHeader(record, type, encryptionType, lastRecordLength, recordLength);
                 System.arraycopy(encrypted, 0, record, HEADER_LENGTH, encrypted.length);
                 byte[] temp = new byte[HEADER_LENGTH + encrypted.length];
@@ -191,7 +203,7 @@ class LogWriter implements Runnable {
         } else if (encryptionType == EncryptionType.NONE) {
             final int recordLength = message.length + HEADER_LENGTH + keyManager.getHashAlgorithm().getHashLength();
             record = new byte[recordLength];
-            ++currentRecordCount;
+            ++currentSequenceNumber;
             appendHeader(record, type, encryptionType, lastRecordLength, recordLength);
             System.arraycopy(message, 0, record, HEADER_LENGTH, message.length);
             byte[] temp = new byte[HEADER_LENGTH + message.length];
@@ -246,7 +258,7 @@ class LogWriter implements Runnable {
         header[1] = (byte)0xf0;
         header[2] = (byte)0xf0;
         header[3] = (byte)0xf0;
-        appendInt4Bytes(header, 4, currentRecordCount);
+        appendInt4Bytes(header, 4, currentSequenceNumber);
         header[8] = type.getByteValue();
         header[9] = encryptionType.getByteValue();
         appendLong8Bytes(header, 10, System.currentTimeMillis());
@@ -270,4 +282,41 @@ class LogWriter implements Runnable {
         }
     }
 
+    String getLogFileName() {
+        return currentLogFile.getName();
+    }
+
+    int getSequenceNumber() {
+        return currentSequenceNumber;
+    }
+
+    byte[] getAccumulativeHash() {
+        return accumulatedHash;
+    }
+
+    LogRecord getCloseLogRecord(){
+        LogRecord.Callback callback = new LogRecord.Callback() {
+            @Override
+            public void handled() {
+                doneThread.set(true);
+                writeSignature(RecordType.LOG_FILE_SIGNATURE);
+                trustedLocation.write(LogWriter.this);
+                System.out.println("-----> done");
+            }
+        };
+        return new LogRecord(null, RecordType.ACCUMULATED_HASH, callback) {
+            byte[] getData() {
+                return accumulatedHash;
+            }
+        };
+    }
+
+    public void awaitClose() {
+        try {
+            doneLatch.await();
+        } catch (InterruptedException e) {
+            //TODO handle this properly
+            throw new RuntimeException(e);
+        }
+    }
 }

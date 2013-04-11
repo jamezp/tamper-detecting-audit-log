@@ -128,8 +128,6 @@ class KeyManager {
             try {
                 final KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
                 keyStore.load(new BufferedInputStream(new FileInputStream(keyStoreLocation)), keyStorePassword.toCharArray());
-                // TODO not all of this information is needed for the signing and
-                // viewer keystores
                 final PrivateKey privateKey = (PrivateKey) keyStore.getKey(keyName, keyPassword.toCharArray());
                 final Certificate certificate = keyStore.getCertificate(keyName);
                 final byte[] publicKeyCert = certificate.getEncoded();
@@ -166,7 +164,6 @@ class KeyManager {
             try {
                 final KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
                 keyStore.load(new BufferedInputStream(new FileInputStream(keyStoreLocation)), keyStorePassword.toCharArray());
-                //TODO not all of this information is needed for the signing and viewer keystores
                 final PrivateKey privateKey = (PrivateKey)keyStore.getKey(keyName, keyPassword.toCharArray());
                 final Certificate certificate = keyStore.getCertificate(keyName);
                 final PublicKey publicKey = certificate.getPublicKey();

@@ -30,6 +30,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     private KeyPairBuilderImpl signingStore;
     private KeyManager.ViewingCertificateInfo viewingStore;
     private File logFileDir;
+    private File trustedLocationFile;
 
     @Override
     public EncryptingKeyPairBuilder encryptingStoreBuilder() {
@@ -54,16 +55,22 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     }
 
     @Override
+    public SecureLoggerBuilder setTrustedLocation(File file) {
+        trustedLocationFile = file;
+        return this;
+    }
+
+    @Override
     public SecureLogger buildLogger() throws KeyStoreInitializationException {
         KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
-        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogRecord>());
+        TrustedLocation trustedLocation = TrustedLocation.create(keyManager, logFileDir, trustedLocationFile);
+        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogRecord>(), trustedLocation);
         return secureLogger;
     }
 
     @Override
     public SecureLogReader buildReader() throws KeyStoreInitializationException {
         KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
-        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogRecord>());
         return null;
 
     }

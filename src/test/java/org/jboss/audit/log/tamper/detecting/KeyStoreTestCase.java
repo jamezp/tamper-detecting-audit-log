@@ -68,9 +68,11 @@ public class KeyStoreTestCase {
 
     @Test
     public void testInitializeSecureLogger() throws Exception {
-        File file = new File("target/test-logs");
-        deleteDirectory(file);
-        file.mkdirs();
+        File testLogDir = new File("target/test-logs");
+        deleteDirectory(testLogDir);
+        testLogDir.mkdirs();
+
+        File trusted = new File(testLogDir, "trusted");
 
         SecureLoggerBuilder builder = SecureLoggerBuilder.Factory.createBuilder();
         SecureLogger logger = builder
@@ -88,11 +90,20 @@ public class KeyStoreTestCase {
                 .setKeyPassword("changeit4")
                 .done()
             .setViewingCertificatePath(getResourceFile("test-viewing.cer"))
-            .setLogFileRoot(file)
+            .setLogFileRoot(testLogDir)
+            .setTrustedLocation(trusted)
             .buildLogger();
 
             logger.logMessage("Hello".getBytes());
+            logger.closeLog();
 
+            logger = builder.buildLogger();
+            logger.logMessage("Hello".getBytes());
+            logger.closeLog();
+
+            logger = builder.buildLogger();
+            logger.logMessage("Hello".getBytes());
+            logger.closeLog();
     }
 
     private SigningKeyPairInfo getSigningKeyPair() throws Exception {

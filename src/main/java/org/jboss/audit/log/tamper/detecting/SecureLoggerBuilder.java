@@ -37,6 +37,8 @@ public interface SecureLoggerBuilder {
 
     SecureLoggerBuilder setLogFileRoot(File file);
 
+    SecureLoggerBuilder setTrustedLocation(File file);
+
     SecureLogger buildLogger() throws KeyStoreInitializationException;
 
     SecureLogReader buildReader() throws KeyStoreInitializationException;

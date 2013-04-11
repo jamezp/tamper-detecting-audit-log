@@ -21,36 +21,21 @@
  */
 package org.jboss.audit.log.tamper.detecting;
 
-class LogRecord {
-    private final byte[] data;
-    private final RecordType type;
-    private final Callback callback;
+import java.io.Closeable;
 
-    LogRecord(byte[] data, RecordType type) {
-        this(data, type, null);
-    }
+/**
+ *
+ * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
+ */
+public class IoUtils {
 
-    LogRecord(byte[] data, RecordType type, Callback callback) {
-        this.data = data;
-        this.type = type;
-        this.callback = callback;
-    }
-
-    byte[] getData() {
-        return data;
-    }
-
-    RecordType getType() {
-        return type;
-    }
-
-    void logged() {
-        if (callback != null) {
-            callback.handled();
+    static void safeClose(Closeable closeable) {
+        if (closeable == null) {
+            return;
         }
-    }
-
-    interface Callback {
-        void handled();
+        try {
+            closeable.close();
+        } catch (Exception ignore) {
+        }
     }
 }

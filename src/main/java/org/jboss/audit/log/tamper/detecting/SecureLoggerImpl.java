@@ -30,16 +30,18 @@ import java.util.concurrent.BlockingQueue;
  */
 class SecureLoggerImpl implements SecureLogger {
     private final BlockingQueue<LogRecord> recordQueue;
+    private final File logFileDir;
     private final LogWriter logWriter;
 
-    private SecureLoggerImpl(BlockingQueue<LogRecord> recordQueue, LogWriter logWriter) {
+    private SecureLoggerImpl(File logFileDir, BlockingQueue<LogRecord> recordQueue, LogWriter logWriter) {
+        this.logFileDir = logFileDir;
         this.recordQueue = recordQueue;
         this.logWriter = logWriter;
     }
 
-    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogRecord> recordQueue) {
-        LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue);
-        SecureLoggerImpl logger = new SecureLoggerImpl(recordQueue, writer);
+    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogRecord> recordQueue, TrustedLocation trustedLocation) {
+        LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue, trustedLocation);
+        SecureLoggerImpl logger = new SecureLoggerImpl(logFileDir, recordQueue, writer);
         logger.initialize();
         return logger;
     }
@@ -47,6 +49,8 @@ class SecureLoggerImpl implements SecureLogger {
     private void initialize() {
         //TODO verify the previous log files etc.
         Thread t = new Thread(logWriter, "audit-log-writer");
+        t.setDaemon(false);
+        System.out.println(t);
         t.start();
     }
 
@@ -54,6 +58,13 @@ class SecureLoggerImpl implements SecureLogger {
     public void logMessage(byte[] message) {
         recordQueue.add(new LogRecord(message, RecordType.CLIENT_LOG_DATA));
     }
+
+    @Override
+    public void closeLog() {
+        recordQueue.add(logWriter.getCloseLogRecord());
+        logWriter.awaitClose();
+    }
+
 
 
     //TODO heart beat
