@@ -47,10 +47,8 @@ class SecureLoggerImpl implements SecureLogger {
     }
 
     private void initialize() {
-        //TODO verify the previous log files etc.
         Thread t = new Thread(logWriter, "audit-log-writer");
         t.setDaemon(false);
-        System.out.println(t);
         t.start();
     }
 

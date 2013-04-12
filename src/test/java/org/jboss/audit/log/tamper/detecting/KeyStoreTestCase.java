@@ -25,7 +25,9 @@ import static junit.framework.Assert.assertNotNull;
 
 import java.io.File;
 import java.net.URL;
+import java.util.Arrays;
 
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.PBEParameterSpec;
 
@@ -34,6 +36,7 @@ import junit.framework.Assert;
 import org.jboss.audit.log.tamper.detecting.KeyManager.EncryptingKeyPairInfo;
 import org.jboss.audit.log.tamper.detecting.KeyManager.SigningKeyPairInfo;
 import org.jboss.audit.log.tamper.detecting.KeyManager.ViewingCertificateInfo;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -41,6 +44,18 @@ import org.junit.Test;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 public class KeyStoreTestCase {
+
+    File testLogDir;
+    File trusted;
+
+    @Before
+    public void setupDirectories() {
+        testLogDir = new File("target/test-logs");
+        deleteDirectory(testLogDir);
+        testLogDir.mkdirs();
+
+        trusted = new File(testLogDir, "trusted");
+    }
 
     @Test
     public void testInitSigningKeyPair() throws Exception {
@@ -64,46 +79,54 @@ public class KeyStoreTestCase {
         Assert.assertNotNull(key);
         PBEParameterSpec pbeParameterSpec = facade.getPbeParameterSpec();
         Assert.assertNotNull(pbeParameterSpec);
+
+        byte[] rawBytes = new byte[] {19, 30, -1, -113, 102, -15, -83, -89, -1, 46, 53, 7, -90, -123, 87, 23};
+        Cipher cipher = Cipher.getInstance(facade.getEncryptingPublicKey().getAlgorithm());
+        cipher.init(Cipher.ENCRYPT_MODE, facade.getEncryptingPublicKey());
+        byte[] encryptedMessage = cipher.doFinal(rawBytes);
+        Cipher cipher2 = Cipher.getInstance(facade.getEncryptingPrivateKey().getAlgorithm());
+        cipher2.init(Cipher.DECRYPT_MODE, facade.getEncryptingPrivateKey());
+        byte[] decrypted = cipher2.doFinal(encryptedMessage);
+
+        Assert.assertTrue(Arrays.equals(rawBytes, decrypted));
+
     }
 
     @Test
     public void testInitializeSecureLogger() throws Exception {
-        File testLogDir = new File("target/test-logs");
-        deleteDirectory(testLogDir);
-        testLogDir.mkdirs();
+        SecureLogger logger = createLogger();
+        logger.logMessage("Hello".getBytes());
+        logger.closeLog();
 
-        File trusted = new File(testLogDir, "trusted");
+        logger = createLogger();
+        logger.logMessage("Hello".getBytes());
+        logger.closeLog();
 
-        SecureLoggerBuilder builder = SecureLoggerBuilder.Factory.createBuilder();
-        SecureLogger logger = builder
-            .signingStoreBuilder()
-                .setPath(getResourceFile("test-sign.keystore"))
-                .setKeyName("audit-sign")
-                .setStorePassword("changeit1")
-                .setKeyPassword("changeit2")
-                .setHashAlgorithm(HashAlgorithm.SHA1)
-                .done()
-            .encryptingStoreBuilder()
-                .setPath(getResourceFile("test-encrypt.keystore"))
-                .setKeyName("audit-encrypt")
-                .setStorePassword("changeit3")
-                .setKeyPassword("changeit4")
-                .done()
-            .setViewingCertificatePath(getResourceFile("test-viewing.cer"))
-            .setLogFileRoot(testLogDir)
-            .setTrustedLocation(trusted)
-            .buildLogger();
+        logger = createLogger();
+        logger.logMessage("Hello".getBytes());
+        logger.closeLog();
+    }
 
-            logger.logMessage("Hello".getBytes());
-            logger.closeLog();
+    private SecureLogger createLogger() throws Exception {
+        return SecureLoggerBuilder.Factory.createBuilder()
+                .signingStoreBuilder()
+                    .setPath(getResourceFile("test-sign.keystore"))
+                    .setKeyName("audit-sign")
+                    .setStorePassword("changeit1")
+                    .setKeyPassword("changeit2")
+                    .setHashAlgorithm(HashAlgorithm.SHA1)
+                    .done()
+                .encryptingStoreBuilder()
+                    .setPath(getResourceFile("test-encrypt.keystore"))
+                    .setKeyName("audit-encrypt")
+                    .setStorePassword("changeit3")
+                    .setKeyPassword("changeit4")
+                    .done()
+                .setViewingCertificatePath(getResourceFile("test-viewing.cer"))
+                .setLogFileRoot(testLogDir)
+                .setTrustedLocation(trusted)
+                .buildLogger();
 
-            logger = builder.buildLogger();
-            logger.logMessage("Hello".getBytes());
-            logger.closeLog();
-
-            logger = builder.buildLogger();
-            logger.logMessage("Hello".getBytes());
-            logger.closeLog();
     }
 
     private SigningKeyPairInfo getSigningKeyPair() throws Exception {

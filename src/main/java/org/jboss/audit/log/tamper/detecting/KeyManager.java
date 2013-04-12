@@ -71,6 +71,10 @@ class KeyManager {
         return encryptingKeyPair.publicKey;
     }
 
+    PrivateKey getEncryptingPrivateKey() {
+        return encryptingKeyPair.privateKey;
+    }
+
     String getSigningAlgorithmName() {
         return signingKeyPair.algorithmName;
     }

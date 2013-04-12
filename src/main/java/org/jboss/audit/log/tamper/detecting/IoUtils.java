@@ -38,4 +38,7 @@ public class IoUtils {
         } catch (Exception ignore) {
         }
     }
+
+    static final int HEADER_LENGTH = 26;
+    static final int OUTPUTSIZE = 128;
 }

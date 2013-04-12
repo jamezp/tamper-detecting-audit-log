@@ -90,6 +90,19 @@ class TrustedLocation {
         return trustedLocation;
     }
 
+    File getPreviousLogFile() {
+        return previousLogFile;
+    }
+
+    File getCurrentInspectionLogFile() {
+        return currentInspectionLogFile;
+    }
+
+    byte[] getAccumulatedMessageHash() {
+        return lastAccumulativeHash;
+    }
+
+
     int write(LogWriter logWriter) {
         byte [] fileBytes = null;
         byte [] asn1Block = generateASN1Block(logWriter);
@@ -165,6 +178,7 @@ class TrustedLocation {
     }
 
     private byte[] generateASN1Block(LogWriter logWriter){
+        System.out.println("====> Writing " + logWriter.getLogFileName() + " " + logWriter.getSequenceNumber() + " " + logWriter.getAccumulativeHash());
         byte[] arrayASN = null;
         SEQUENCE ASN1Seq = new SEQUENCE();
         try {
