@@ -87,6 +87,7 @@ class LogReader {
             return null;
         }
         final int recordLength = getRecordLength(header);
+        //TODO check sequence number is greater
         final int sequenceNumber = getSequenceNumber(header);
         final RecordType recordType = getRecordType(header);
         final StringBuilder sb = new StringBuilder();
@@ -111,9 +112,9 @@ class LogReader {
                         logInfo.secretKey = new SecretKeySpec(rawKey, "AES");
                     }
                 }
+                //TODO allow for the user private key
             }
 
-            //TODO allow for the user private key
             final byte[] plainMessage = getEncryptionType(header) == EncryptionType.SYMMETRIC ?
                     symmetricDecryptMessage(logInfo, message) : message;
 

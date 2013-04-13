@@ -21,17 +21,19 @@
  */
 package org.jboss.audit.log.tamper.detecting;
 
-import iaik.asn1.ASN1;
-import iaik.asn1.DerCoder;
-import iaik.asn1.IA5String;
-import iaik.asn1.INTEGER;
-import iaik.asn1.OCTET_STRING;
-import iaik.asn1.SEQUENCE;
-
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.RandomAccessFile;
 
 import javax.crypto.Cipher;
+
+import org.bouncycastle.asn1.ASN1InputStream;
+import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.DERIA5String;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequenceGenerator;
 
 /**
  *
@@ -47,7 +49,7 @@ class TrustedLocation {
     private final File currentInspectionLogFile;
     private final byte[] lastAccumulativeHash;
 
-    TrustedLocation(KeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile, int lastSequenceNumber, byte[] lastAccumulativeHash) {
+    private TrustedLocation(KeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile, int lastSequenceNumber, byte[] lastAccumulativeHash) {
         this.keyManager = keyManager;
         this.logFileDir = logFileDir;
         this.trustedLocationFile = trustedLocationFile;
@@ -159,36 +161,31 @@ class TrustedLocation {
         }
 
         private int extractASN1Block (byte[] asn1Block){
-            try{
-                ASN1 asn1 = new ASN1(asn1Block);
-                IA5String s0 = (IA5String)asn1.getComponentAt(0);
-                lastFileName = (String)s0.getValue();
+            ASN1InputStream aIn = new ASN1InputStream(asn1Block);
+            try {
+                ASN1Sequence sequence = (ASN1Sequence)aIn.readObject();
 
-                INTEGER i1 = (INTEGER)asn1.getComponentAt(1);
-                java.math.BigInteger b1 = (java.math.BigInteger)i1.getValue();
-                lastSN = b1.intValue();
-
-                OCTET_STRING b = (OCTET_STRING)asn1.getComponentAt(2);
-                lastAccumulativeHash = (byte[]) b.getValue();
+                lastFileName = ((DERIA5String)sequence.getObjectAt(0)).getString();
+                lastSN = ((ASN1Integer)sequence.getObjectAt(1)).getValue().intValue();
+                lastAccumulativeHash = ((DEROctetString)sequence.getObjectAt(2)).getOctets();
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
             return 0;
-          }
+        }
     }
 
     private byte[] generateASN1Block(LogWriter logWriter){
-        System.out.println("====> Writing " + logWriter.getLogFileName() + " " + logWriter.getSequenceNumber() + " " + logWriter.getAccumulativeHash());
-        byte[] arrayASN = null;
-        SEQUENCE ASN1Seq = new SEQUENCE();
+        ByteArrayOutputStream bout = new ByteArrayOutputStream();
         try {
-              ASN1Seq.addComponent(new IA5String(logWriter.getLogFileName()));
-              ASN1Seq.addComponent(new INTEGER(logWriter.getSequenceNumber()));
-              ASN1Seq.addComponent(new OCTET_STRING(logWriter.getAccumulativeHash()));
-         } catch (Exception e) {
-             throw new RuntimeException(e);
-         }
-         arrayASN = DerCoder.encode(ASN1Seq);
-         return arrayASN;
+            DERSequenceGenerator gen = new DERSequenceGenerator(bout);
+            gen.addObject(new DERIA5String(logWriter.getLogFileName()));
+            gen.addObject(new ASN1Integer(logWriter.getSequenceNumber()));
+            gen.addObject(new DEROctetString(logWriter.getAccumulativeHash()));
+            gen.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return bout.toByteArray();
     }
 }
