@@ -170,6 +170,8 @@ class TrustedLocation {
                 lastAccumulativeHash = ((DEROctetString)sequence.getObjectAt(2)).getOctets();
             } catch (Exception e) {
                 throw new RuntimeException(e);
+            } finally {
+                IoUtils.safeClose(aIn);
             }
             return 0;
         }

@@ -27,30 +27,36 @@ package org.jboss.audit.log.tamper.detecting;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 enum RecordType {
-    SECRET_RANDOM_NUMBER((byte)0x01),
-    SYMMETRIC_ENCRYPTION_KEY((byte)0x02),
-    LAST_FILE((byte)0x03),
-    CLIENT_LOG_DATA((byte)0x04),
-    ACCUMULATED_HASH((byte)0x05),
-    LOG_FILE_SIGNATURE((byte)0x06),
-    CERTIFICATE((byte)0x07),
-    STARTUP((byte)0x08),
-    SHUTDOWN((byte)0x09),
-    UNAUTHORIZED_CONNECTION_ATTEMPT((byte)0x0a), //is this necessary
-    AUDITOR_NOTIFICATION((byte)0x0b), //is this necessary?
-    HEARTBEAT((byte)0x0c),
-    CLIENT_ID((byte)0x0d),//is this necessary
-    HASH_ALGORITHM((byte)0x0e),
-    HEADER_SIGNATURE((byte)0x0f);
+    SECRET_RANDOM_NUMBER((byte)0x01, true),
+    SYMMETRIC_ENCRYPTION_KEY((byte)0x02, true),
+    LAST_FILE((byte)0x03, true),
+    CLIENT_LOG_DATA((byte)0x04, true),
+    ACCUMULATED_HASH((byte)0x05, false),
+    LOG_FILE_SIGNATURE((byte)0x06, false),
+    CERTIFICATE((byte)0x07, true),
+    STARTUP((byte)0x08, true),
+    SHUTDOWN((byte)0x09, true),
+    UNAUTHORIZED_CONNECTION_ATTEMPT((byte)0x0a, true), //is this necessary
+    AUDITOR_NOTIFICATION((byte)0x0b, true),
+    HEARTBEAT((byte)0x0c, true),
+    CLIENT_ID((byte)0x0d, true),
+    HASH_ALGORITHM((byte)0x0e, true),
+    HEADER_SIGNATURE((byte)0x0f, true);
 
     final byte value;
+    final boolean addToAccumulativeDigest;
 
-    RecordType(byte value){
+    RecordType(byte value, boolean addToAccumulativeDigest){
         this.value = value;
+        this.addToAccumulativeDigest = addToAccumulativeDigest;
     }
 
     byte getByteValue() {
         return value;
+    }
+
+    boolean addToAccumulativeDigest() {
+        return addToAccumulativeDigest;
     }
 
     static RecordType fromByte(byte b) {

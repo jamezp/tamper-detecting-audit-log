@@ -130,8 +130,13 @@ public class KeyStoreTestCase {
         System.out.println("-- encoded");
         System.out.println(Arrays.toString(arrayASN));
 
+        ASN1Sequence sequence;
         ASN1InputStream aIn = new ASN1InputStream(arrayASN);
-        ASN1Sequence sequence = (ASN1Sequence)aIn.readObject();
+        try {
+            sequence = (ASN1Sequence)aIn.readObject();
+        } finally {
+            IoUtils.safeClose(aIn);
+        }
 
         Assert.assertEquals(fileName, ((DERIA5String)sequence.getObjectAt(0)).getString());
         Assert.assertEquals(i, ((ASN1Integer)sequence.getObjectAt(1)).getValue().intValue());

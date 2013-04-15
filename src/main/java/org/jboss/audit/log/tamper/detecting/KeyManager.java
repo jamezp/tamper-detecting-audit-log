@@ -67,6 +67,11 @@ class KeyManager {
         return viewingCertificate.publicKey;
     }
 
+    PrivateKey getViewingPrivateKey() {
+        //TODO
+        return null;
+    }
+
     PublicKey getEncryptingPublicKey() {
         return encryptingKeyPair.publicKey;
     }

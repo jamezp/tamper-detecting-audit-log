@@ -92,14 +92,6 @@ class LogWriter implements Runnable {
             throw new RuntimeException(e);
         }
 
-        final SecureRandom random;
-        try {
-            random = SecureRandom.getInstance("SHA1PRNG", "SUN");
-            random.nextBytes(secureRandomBytes);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-
         logMessage(new byte[] {keyManager.getHashAlgorithm().getByteValue()}, RecordType.HASH_ALGORITHM, EncryptionType.NONE);
 
         final KeyGenerator kgen;
@@ -111,6 +103,13 @@ class LogWriter implements Runnable {
         kgen.init(128);
         symmetricKeyInLog = kgen.generateKey();
         final byte[] rawKey = symmetricKeyInLog.getEncoded();
+        try {
+            final SecureRandom random = SecureRandom.getInstance("SHA1PRNG", "SUN");
+            random.nextBytes(secureRandomBytes);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
         logMessage(secureRandomBytes, RecordType.SECRET_RANDOM_NUMBER, EncryptionType.ASSYMETRIC);
         logMessage(rawKey, RecordType.SYMMETRIC_ENCRYPTION_KEY, EncryptionType.ASSYMETRIC);
         logMessage(rawKey, RecordType.SYMMETRIC_ENCRYPTION_KEY, EncryptionType.ASSYMETRIC, keyManager.getViewingPublicKey());
@@ -188,6 +187,7 @@ class LogWriter implements Runnable {
                 }
             }
         } finally {
+            IoUtils.safeClose(currentRandomAccessFile);
             doneLatch.countDown();
         }
     }
@@ -253,7 +253,7 @@ class LogWriter implements Runnable {
         }
 
 
-        if (type != RecordType.ACCUMULATED_HASH && type != RecordType.LOG_FILE_SIGNATURE) {
+        if (type.addToAccumulativeDigest()) {
             accumulativeDigest.update(record);
             try {
                 MessageDigest accumulativeDigestCopy = (MessageDigest)accumulativeDigest.clone();
