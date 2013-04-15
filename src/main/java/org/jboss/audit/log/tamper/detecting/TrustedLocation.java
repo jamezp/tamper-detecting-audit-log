@@ -43,19 +43,15 @@ class TrustedLocation {
 
     private final KeyManager keyManager;
     private final File trustedLocationFile;
-    private final File logFileDir;
     private final File previousLogFile;
-    private final int lastSequenceNumber;
     private final File currentInspectionLogFile;
     private final byte[] lastAccumulativeHash;
 
     private TrustedLocation(KeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile, int lastSequenceNumber, byte[] lastAccumulativeHash) {
         this.keyManager = keyManager;
-        this.logFileDir = logFileDir;
         this.trustedLocationFile = trustedLocationFile;
         this.previousLogFile = previousLogFile;
         this.currentInspectionLogFile = currentInspectionLogFile;
-        this.lastSequenceNumber = lastSequenceNumber;
         this.lastAccumulativeHash = lastAccumulativeHash;
     }
 
@@ -105,9 +101,9 @@ class TrustedLocation {
     }
 
 
-    int write(LogWriter logWriter) {
+    int write(File logFile, int sequenceNumber, byte[] accumulatedHash) {
         byte [] fileBytes = null;
-        byte [] asn1Block = generateASN1Block(logWriter);
+        byte [] asn1Block = generateASN1Block(logFile.getName(), sequenceNumber, accumulatedHash);
         if (asn1Block == null) {
             throw new RuntimeException("Could not generate ASN1 block");
         }
@@ -177,13 +173,13 @@ class TrustedLocation {
         }
     }
 
-    private byte[] generateASN1Block(LogWriter logWriter){
+    private byte[] generateASN1Block(String logFileName, int sequenceNumber, byte[] accumulatedHash){
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
         try {
             DERSequenceGenerator gen = new DERSequenceGenerator(bout);
-            gen.addObject(new DERIA5String(logWriter.getLogFileName()));
-            gen.addObject(new ASN1Integer(logWriter.getSequenceNumber()));
-            gen.addObject(new DEROctetString(logWriter.getAccumulativeHash()));
+            gen.addObject(new DERIA5String(logFileName));
+            gen.addObject(new ASN1Integer(sequenceNumber));
+            gen.addObject(new DEROctetString(accumulatedHash));
             gen.close();
         } catch (IOException e) {
             throw new RuntimeException(e);

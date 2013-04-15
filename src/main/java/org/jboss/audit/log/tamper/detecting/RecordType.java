@@ -43,8 +43,8 @@ enum RecordType {
     HASH_ALGORITHM((byte)0x0e, true),
     HEADER_SIGNATURE((byte)0x0f, true);
 
-    final byte value;
-    final boolean addToAccumulativeDigest;
+    private final byte value;
+    private final boolean addToAccumulativeDigest;
 
     RecordType(byte value, boolean addToAccumulativeDigest){
         this.value = value;

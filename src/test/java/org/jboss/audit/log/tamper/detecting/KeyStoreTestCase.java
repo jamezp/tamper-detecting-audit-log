@@ -23,7 +23,6 @@ package org.jboss.audit.log.tamper.detecting;
 
 import static junit.framework.Assert.assertNotNull;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.net.URL;
 import java.util.Arrays;
@@ -34,12 +33,6 @@ import javax.crypto.spec.PBEParameterSpec;
 
 import junit.framework.Assert;
 
-import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.ASN1Integer;
-import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.DERIA5String;
-import org.bouncycastle.asn1.DEROctetString;
-import org.bouncycastle.asn1.DERSequenceGenerator;
 import org.jboss.audit.log.tamper.detecting.KeyManager.EncryptingKeyPairInfo;
 import org.jboss.audit.log.tamper.detecting.KeyManager.SigningKeyPairInfo;
 import org.jboss.audit.log.tamper.detecting.KeyManager.ViewingCertificateInfo;
@@ -107,42 +100,21 @@ public class KeyStoreTestCase {
 
         logger = createLogger();
         logger.logMessage("Hello".getBytes());
+
+        for (int i = 0 ; i < 10000 ; i ++) {
+            StringBuilder sb = new StringBuilder();
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            for (int j = 0 ; j < 200 ;  j++) {
+                sb.append(timestamp);
+            }
+            logger.logMessage(sb.toString().getBytes());
+        }
+
         logger.closeLog();
 
         logger = createLogger();
         logger.logMessage("Hello".getBytes());
         logger.closeLog();
-    }
-
-
-    @Test
-    public void testASN1BouncyCastle() throws Exception {
-        String fileName = "filename";
-        int i = 100;
-        byte[] arrayVal = new byte[] {1, 2, 3, 4, 5, 6, 7, 8};
-        ByteArrayOutputStream bout = new ByteArrayOutputStream();
-        DERSequenceGenerator gen = new DERSequenceGenerator(bout);
-        gen.addObject(new DERIA5String(fileName));
-        gen.addObject(new ASN1Integer(i));
-        gen.addObject(new DEROctetString(arrayVal));
-        gen.close();
-        byte[] arrayASN = bout.toByteArray();
-        System.out.println("-- encoded");
-        System.out.println(Arrays.toString(arrayASN));
-
-        ASN1Sequence sequence;
-        ASN1InputStream aIn = new ASN1InputStream(arrayASN);
-        try {
-            sequence = (ASN1Sequence)aIn.readObject();
-        } finally {
-            IoUtils.safeClose(aIn);
-        }
-
-        Assert.assertEquals(fileName, ((DERIA5String)sequence.getObjectAt(0)).getString());
-        Assert.assertEquals(i, ((ASN1Integer)sequence.getObjectAt(1)).getValue().intValue());
-        Assert.assertTrue(Arrays.equals(arrayVal, ((DEROctetString)sequence.getObjectAt(2)).getOctets()));
-        System.out.println(sequence.getObjectAt(1));
-        System.out.println(sequence.getObjectAt(2));
     }
 
     private SecureLogger createLogger() throws Exception {

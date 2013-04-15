@@ -39,6 +39,13 @@ public class IoUtils {
         }
     }
 
+    /**
+     * The length of the log record header
+     */
     static final int HEADER_LENGTH = 26;
-    static final int OUTPUTSIZE = 128;
+
+    /**
+     * The length of the secure random bytes array
+     */
+    static final int SECURE_RANDOM_BYTES_LENGTH = 20;
 }
