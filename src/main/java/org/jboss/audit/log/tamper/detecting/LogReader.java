@@ -28,6 +28,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.security.PrivateKey;
+import java.security.Signature;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
@@ -50,6 +51,9 @@ class LogReader {
         this.logFile = logFile;
     }
 
+    /**
+     * Does a simple check of the accumulative hash in the file, and then checks that the signed accumulative hash is the same as we calculate
+     */
     LogInfo checkLogFile() {
         final RandomAccessFile raf;
         try {
@@ -63,7 +67,7 @@ class LogReader {
             final LogInfo logInfo = new LogInfo(logFileHeaderInfo);
             while (true) {
                 final LogRecordInfo logRecordInfo = LogRecordInfo.read(raf, context);
-                if (logRecordInfo.getRecordType() == RecordType.CLIENT_LOG_DATA) {
+                if (logRecordInfo.getRecordType() == RecordType.CLIENT_LOG_DATA || logRecordInfo.getRecordType() == RecordType.HEARTBEAT) {
                     //TODO Read the log records
 
 
@@ -81,7 +85,20 @@ class LogReader {
                     if (!Arrays.equals(logInfo.accumulatedHash, logFileHeaderInfo.accumulativeDigest.getAccumulativeHash())) {
                         throw new IllegalStateException("The calculated accumulative hash was different from the accumulative hash record");
                     }
-                    //TODO check signature
+
+                    byte[] calculatedSignature;
+                    try {
+                        Signature signature = Signature.getInstance(keyManager.getSigningAlgorithmName());
+                        signature.initSign(keyManager.getSigningPrivateKey());
+                        signature.update(context.getAccumulativeDigest().getAccumulativeHash());
+                        calculatedSignature = signature.sign();
+                    } catch(Exception e) {
+                        throw new IllegalStateException("Could not calculate signature", e);
+                    }
+                    if (!Arrays.equals(calculatedSignature, logInfo.signature)) {
+                        throw new IllegalStateException("Signature differs");
+                    }
+
 
                     return logInfo;
                 }

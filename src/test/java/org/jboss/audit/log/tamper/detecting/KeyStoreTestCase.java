@@ -100,15 +100,8 @@ public class KeyStoreTestCase {
 
         logger = createLogger();
         logger.logMessage("Hello".getBytes());
-
-        for (int i = 0 ; i < 10000 ; i ++) {
-            StringBuilder sb = new StringBuilder();
-            String timestamp = String.valueOf(System.currentTimeMillis());
-            for (int j = 0 ; j < 200 ;  j++) {
-                sb.append(timestamp);
-            }
-            logger.logMessage(sb.toString().getBytes());
-        }
+        Thread.sleep(1500);
+        logger.logMessage("Test".getBytes());
 
         logger.closeLog();
 

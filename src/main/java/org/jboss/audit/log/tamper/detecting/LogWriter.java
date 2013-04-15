@@ -31,6 +31,7 @@ import java.security.SecureRandom;
 import java.security.Signature;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.crypto.Cipher;
@@ -123,7 +124,7 @@ class LogWriter implements Runnable {
 
     private LogReader.LogInfo verifyLogFile(File logFile) {
         LogReader reader = new LogReader(keyManager, logFile);
-        return reader.verifyLogFile();
+        return reader.checkLogFile();
     }
 
     private void createLastFileRecord(String lastFilename, byte[] lastAccumulatedHash, byte[] lastSignature){
@@ -148,10 +149,13 @@ class LogWriter implements Runnable {
         try {
             while (!doneThread.get()) {
                 try {
-                    LogRecord logRecord = recordQueue.take();
-                    logMessage(logRecord.getData(), logRecord.getType(), EncryptionType.NONE);
-                    trustedLocation.write(logFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
-                    logRecord.logged();
+                    LogRecord logRecord = recordQueue.poll(1, TimeUnit.SECONDS);
+                    if (logRecord != null) {
+                        logMessage(logRecord.getData(), logRecord.getType(), EncryptionType.NONE);
+                        logRecord.logged();
+                    } else {
+                        logMessage(new byte[0], RecordType.HEARTBEAT, EncryptionType.NONE);
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -224,6 +228,7 @@ class LogWriter implements Runnable {
             System.arraycopy(hash, 0, record, header.length + message.length, hash.length);
 
             currentRandomAccessFile.write(record);
+            trustedLocation.write(logFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
