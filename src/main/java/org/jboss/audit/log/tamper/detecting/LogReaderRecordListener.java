@@ -21,36 +21,30 @@
  */
 package org.jboss.audit.log.tamper.detecting;
 
-class LogRecord {
-    private final byte[] data;
-    private final RecordType type;
-    private final Callback callback;
+/**
+ *
+ * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
+ */
+abstract class LogReaderRecordListener {
 
-    LogRecord(byte[] data, RecordType type) {
-        this(data, type, null);
+    private final boolean strict;
+    private volatile AccumulativeDigest accumulativeDigest;
+
+    protected LogReaderRecordListener(boolean strict) {
+        this.strict = strict;
     }
 
-    LogRecord(byte[] data, RecordType type, Callback callback) {
-        this.data = data;
-        this.type = type;
-        this.callback = callback;
+    void setAccumulativeDigest(AccumulativeDigest accumulativeDigest) {
+        this.accumulativeDigest = accumulativeDigest;
     }
 
-    byte[] getData() {
-        return data;
-    }
-
-    RecordType getType() {
-        return type;
-    }
-
-    void logged() {
-        if (callback != null) {
-            callback.handled();
+    final void recordAdded(LogReaderRecord record) {
+        if (strict) {
+            accumulativeDigest.digestRecord(record.getRecordType(), record.getHeader(), record.getBody());
+        } else {
+            accumulativeDigest.digestRecordAndCheck(record.getRecordType(), record.getHeader(), record.getBody(), record.getHash());
         }
     }
 
-    interface Callback {
-        void handled();
-    }
+    protected abstract void handleRecordAdded(LogReaderRecord record);
 }

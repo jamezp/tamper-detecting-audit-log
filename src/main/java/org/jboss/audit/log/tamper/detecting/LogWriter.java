@@ -40,7 +40,7 @@ import javax.crypto.SecretKey;
 
 class LogWriter implements Runnable {
     private final KeyManager keyManager;
-    private final BlockingQueue<LogRecord> recordQueue;
+    private final BlockingQueue<LogWriterRecord> recordQueue;
     private final LogFileNameUtil logFileNameUtil;
     private final byte[] secureRandomBytes = new byte[IoUtils.SECURE_RANDOM_BYTES_LENGTH];
     private final TrustedLocation trustedLocation;
@@ -54,7 +54,7 @@ class LogWriter implements Runnable {
     private volatile SecretKey symmetricKeyInLog = null;
     private volatile int lastRecordLength;
 
-    private LogWriter(KeyManager keyManager, File logFileDir, BlockingQueue<LogRecord> recordQueue, TrustedLocation trustedLocation) {
+    private LogWriter(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation) {
         this.keyManager = keyManager;
         this.recordQueue = recordQueue;
         logFileNameUtil = new LogFileNameUtil(logFileDir);
@@ -62,7 +62,7 @@ class LogWriter implements Runnable {
         this.accumulativeDigest = AccumulativeDigest.createForWriter(keyManager.getHashAlgorithm(), secureRandomBytes);
     }
 
-    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogRecord> recordQueue, TrustedLocation trustedLocation) {
+    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation) {
         LogWriter writer = new LogWriter(keyManager, logFileDir, recordQueue, trustedLocation);
         writer.createNewLogFile();
         return writer;
@@ -153,7 +153,7 @@ class LogWriter implements Runnable {
         try {
             while (!doneThread.get()) {
                 try {
-                    LogRecord logRecord = recordQueue.poll(1, TimeUnit.SECONDS);
+                    LogWriterRecord logRecord = recordQueue.poll(1, TimeUnit.SECONDS);
                     if (logRecord != null) {
                         logMessage(logRecord.getData(), logRecord.getType(), EncryptionType.NONE);
                         logRecord.logged();
@@ -267,8 +267,8 @@ class LogWriter implements Runnable {
         return accumulativeDigest.getAccumulativeHash();
     }
 
-    LogRecord getCloseLogRecord(){
-        LogRecord.Callback callback = new LogRecord.Callback() {
+    LogWriterRecord getCloseLogRecord(){
+        LogWriterRecord.Callback callback = new LogWriterRecord.Callback() {
             @Override
             public void handled() {
                 doneThread.set(true);
@@ -276,7 +276,7 @@ class LogWriter implements Runnable {
                 trustedLocation.write(logFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
             }
         };
-        return new LogRecord(null, RecordType.ACCUMULATED_HASH, callback) {
+        return new LogWriterRecord(null, RecordType.ACCUMULATED_HASH, callback) {
             byte[] getData() {
                 return getAccumulativeHash();
             }

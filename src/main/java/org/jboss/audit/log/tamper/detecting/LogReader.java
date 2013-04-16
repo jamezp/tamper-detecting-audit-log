@@ -25,8 +25,6 @@ package org.jboss.audit.log.tamper.detecting;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.security.PrivateKey;
 import java.security.Signature;
@@ -56,6 +54,10 @@ class LogReader {
      * Does a simple check of the accumulative hash in the file, and then checks that the signed accumulative hash is the same as we calculate
      */
     LogInfo checkLogFile() {
+        return readLogFile(new SimpleCheckLogFileRecordListener());
+    }
+
+    LogInfo readLogFile(LogReaderRecordListener listener) {
         final RandomAccessFile raf;
         try {
             raf = new RandomAccessFile(logFile, "r");
@@ -63,11 +65,11 @@ class LogReader {
             throw new RuntimeException(e);
         }
         try {
-            final LogReaderContext context = new LogReaderContext();
-            final LogFileHeaderInfo logFileHeaderInfo = readLogFileHeader(logFile, raf, context);
+            final LogFileHeaderInfo logFileHeaderInfo = readLogFileHeader(logFile, raf, listener);
             final LogInfo logInfo = new LogInfo(logFileHeaderInfo);
             while (true) {
-                final LogRecordInfo logRecordInfo = LogRecordInfo.read(raf, context);
+                final LogReaderRecord logRecordInfo = LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest);
+                listener.recordAdded(logRecordInfo);
                 if (logRecordInfo.getRecordType() == RecordType.CLIENT_LOG_DATA || logRecordInfo.getRecordType() == RecordType.HEARTBEAT) {
                     //TODO Read the log records
 
@@ -76,10 +78,12 @@ class LogReader {
                     //Read the end of the file
                     checkRecordType(logRecordInfo, RecordType.ACCUMULATED_HASH);
                     logInfo.accumulatedHash = logRecordInfo.getBody();
-                    final LogRecordInfo signatureInfo = LogRecordInfo.read(raf, context);
+
+                    final LogReaderRecord signatureInfo = LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest);
+                    listener.recordAdded(logRecordInfo);
                     checkRecordType(signatureInfo, RecordType.LOG_FILE_SIGNATURE);
                     logInfo.signature = signatureInfo.getBody();
-                    if (LogRecordInfo.read(raf, context) != null) {
+                    if (LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest) != null) {
                         throw new IllegalStateException("Unknown content at the end of the file");
                     }
 
@@ -91,7 +95,7 @@ class LogReader {
                     try {
                         Signature signature = Signature.getInstance(keyManager.getSigningAlgorithmName());
                         signature.initSign(keyManager.getSigningPrivateKey());
-                        signature.update(context.getAccumulativeDigest().getAccumulativeHash());
+                        signature.update(logFileHeaderInfo.accumulativeDigest.getAccumulativeHash());
                         calculatedSignature = signature.sign();
                     } catch(Exception e) {
                         throw new IllegalStateException("Could not calculate signature", e);
@@ -99,7 +103,7 @@ class LogReader {
                     if (!Arrays.equals(calculatedSignature, logInfo.signature)) {
                         throw new IllegalStateException("Signature differs");
                     }
-                    logInfo.lastSequenceNumber = context.lastInfo.getSequenceNumber();
+                    logInfo.lastSequenceNumber = signatureInfo.getSequenceNumber();
 
                     return logInfo;
                 }
@@ -110,23 +114,30 @@ class LogReader {
         }
     }
 
-    private void viewLogFile(OutputStream out) {
-
-    }
-
-    private LogFileHeaderInfo readLogFileHeader(File logFile, RandomAccessFile raf, LogReaderContext context) {
+    private LogFileHeaderInfo readLogFileHeader(File logFile, RandomAccessFile raf, LogReaderRecordListener listener) {
         //Read hash algorithm
-        LogRecordInfo.readHashAlgorithm(logFile, raf, context);
-
+        LogReaderRecord hashAlgorithmRecord = LogReaderRecord.readHashAlgorithm(logFile, raf);
+        final HashAlgorithm hashAlgorithm = HashAlgorithm.fromByte(hashAlgorithmRecord.getBody()[0]);
+        final AccumulativeDigest accumulativeDigest = AccumulativeDigest.createForReader(hashAlgorithm, logFile);
+        listener.setAccumulativeDigest(accumulativeDigest);
+        listener.recordAdded(hashAlgorithmRecord);
 
         //Secure random number
-        LogRecordInfo.readSecureRandomBytes(raf, context, keyManager.getEncryptingPrivateKey());
+        LogReaderRecord secureRandomBytesRecord = LogReaderRecord.read(raf, accumulativeDigest);
+        checkRecordType(secureRandomBytesRecord, RecordType.SECRET_RANDOM_NUMBER);
+        final byte[] secureRandomBytes = LogReader.decryptMessageUsingPrivateKey(secureRandomBytesRecord.getBody(), keyManager.getEncryptingPrivateKey());
+        accumulativeDigest.setSecureRandomBytesForReading(secureRandomBytes);
+        listener.recordAdded(secureRandomBytesRecord);
 
         //Read the symmetric encryption keys
-        final LogRecordInfo symmetricEncryptionKeyWithEncryptionPrivateKeyInfo = LogRecordInfo.read(raf, context);
+        final LogReaderRecord symmetricEncryptionKeyWithEncryptionPrivateKeyInfo = LogReaderRecord.read(raf, accumulativeDigest);
         checkRecordType(symmetricEncryptionKeyWithEncryptionPrivateKeyInfo, RecordType.SYMMETRIC_ENCRYPTION_KEY);
-        final LogRecordInfo symmetricEncryptionKeyWithViewerPrivateKeyInfo = LogRecordInfo.read(raf, context);
+        listener.recordAdded(symmetricEncryptionKeyWithEncryptionPrivateKeyInfo);
+
+        final LogReaderRecord symmetricEncryptionKeyWithViewerPrivateKeyInfo = LogReaderRecord.read(raf, accumulativeDigest);
         checkRecordType(symmetricEncryptionKeyWithViewerPrivateKeyInfo, RecordType.SYMMETRIC_ENCRYPTION_KEY);
+        listener.recordAdded(symmetricEncryptionKeyWithViewerPrivateKeyInfo);
+
         final SecretKey secretKey;
         if (keyManager.getViewingPrivateKey() != null) {
             secretKey = decryptSymmetricEncryptionKey(symmetricEncryptionKeyWithViewerPrivateKeyInfo, keyManager.getViewingPrivateKey());
@@ -137,8 +148,9 @@ class LogReader {
         }
 
         //Read the signing certificate
-        final LogRecordInfo signingCertificateInfo = LogRecordInfo.read(raf, context);
+        final LogReaderRecord signingCertificateInfo = LogReaderRecord.read(raf, accumulativeDigest);
         checkRecordType(signingCertificateInfo, RecordType.CERTIFICATE);
+        listener.recordAdded(signingCertificateInfo);
         final Certificate signingCertificate;
         try {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
@@ -148,12 +160,14 @@ class LogReader {
         }
 
         //Read the header signature
-        final LogRecordInfo headerSignatureInfo = LogRecordInfo.read(raf, context);
+        final LogReaderRecord headerSignatureInfo = LogReaderRecord.read(raf, accumulativeDigest);
         checkRecordType(headerSignatureInfo, RecordType.HEADER_SIGNATURE);
+        listener.recordAdded(headerSignatureInfo);
         final byte[] headerSignature = headerSignatureInfo.getBody();
 
         //Read the last file name, hash and signature
-        final LogRecordInfo lastFileInfo = LogRecordInfo.read(raf, context);
+        final LogReaderRecord lastFileInfo = LogReaderRecord.read(raf, accumulativeDigest);
+        listener.recordAdded(lastFileInfo);
         String lastFileName;
         final byte[] lastFileHash;
         final byte[] lastFileSignature;
@@ -176,10 +190,10 @@ class LogReader {
             throw new IllegalStateException("Expected to find last file information");
         }
 
-        return new LogFileHeaderInfo(context.getAccumulativeDigest(), secretKey, signingCertificate, headerSignature, lastFileName, lastFileHash, lastFileSignature);
+        return new LogFileHeaderInfo(accumulativeDigest, secretKey, signingCertificate, headerSignature, lastFileName, lastFileHash, lastFileSignature);
     }
 
-    private SecretKey decryptSymmetricEncryptionKey(LogRecordInfo logRecordInfo, PrivateKey privateKey) {
+    private SecretKey decryptSymmetricEncryptionKey(LogReaderRecord logRecordInfo, PrivateKey privateKey) {
         byte[] rawKey = decryptMessageUsingPrivateKey(logRecordInfo.getBody(), privateKey);
         if (rawKey == null) {
             throw new IllegalStateException("Could not decrypt symmetric encryption private key");
@@ -188,7 +202,7 @@ class LogReader {
 
     }
 
-    private void checkRecordType(LogRecordInfo logRecordInfo, RecordType expectedType) {
+    private void checkRecordType(LogReaderRecord logRecordInfo, RecordType expectedType) {
         if (logRecordInfo.getRecordType() != expectedType) {
             throw new IllegalStateException("Expected recored type " + expectedType + "(" + expectedType.getByteValue() + "), but was" +
                     logRecordInfo.getRecordType() + "(" + logRecordInfo.getRecordType().getByteValue() + ")");
@@ -196,7 +210,7 @@ class LogReader {
     }
 
 
-    private static byte[] decryptMessageUsingPrivateKey(byte[] message, PrivateKey privateKey) {
+    static byte[] decryptMessageUsingPrivateKey(byte[] message, PrivateKey privateKey) {
         try {
             Cipher cipher = Cipher.getInstance(privateKey.getAlgorithm());
             cipher.init(Cipher.DECRYPT_MODE, privateKey);
@@ -251,172 +265,13 @@ class LogReader {
         }
     }
 
-    private static class LogRecordInfo {
-        private final byte[] header;
-        private final byte[] body;
-        private final byte[] hash;
-
-        private LogRecordInfo(byte[] header, byte[] body, byte[] hash) {
-            this.header = header;
-            this.body = body;
-            this.hash = hash;
+    private static class SimpleCheckLogFileRecordListener extends LogReaderRecordListener {
+        SimpleCheckLogFileRecordListener(){
+            super(true);
         }
 
-        int getSequenceNumber() {
-            return HeaderUtil.getSequenceNumber(header);
-        }
-
-
-        RecordType getRecordType() {
-            return RecordType.fromByte(HeaderUtil.getRecordTypeByte(header));
-        }
-
-        byte[] getHeader() {
-            return header;
-        }
-
-        byte[] getBody() {
-            return body;
-        }
-
-        byte[] getHash() {
-            return hash;
-        }
-
-        static void readHashAlgorithm(File file, RandomAccessFile raf, LogReaderContext context) {
-            try {
-                final byte[] header = LogRecordInfo.readLogRecordHeader(raf);
-                if (header == null) {
-                    throw new IllegalStateException("Could not find hash algorithm header");
-                }
-                //int recordLength = getRecordLength(header);
-                if (HeaderUtil.getRecordTypeByte(header) != RecordType.HASH_ALGORITHM.getByteValue()) {
-                    throw new IllegalStateException("Could not find hash algorithm header");
-                }
-                final byte[] body = readRecordBody(raf, 0, 1);
-                final HashAlgorithm hashAlgorithm = HashAlgorithm.fromByte(body[0]);
-                final byte[] hash = readRecordHash(raf, hashAlgorithm);
-                final AccumulativeDigest accumulativeDigest = AccumulativeDigest.createForReader(hashAlgorithm, file);
-                context.setAccumulativeDigest(accumulativeDigest);
-                context.updateInfo(new LogRecordInfo(header, body, hash));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        static void readSecureRandomBytes(RandomAccessFile raf, LogReaderContext context, PrivateKey encryptingPrivateKey) {
-            try {
-                final byte[] header = LogRecordInfo.readLogRecordHeader(raf);
-                if (header == null) {
-                    throw new IllegalStateException("Could not find secure random header");
-                }
-                final int recordLength = getRecordLength(header);
-                if (HeaderUtil.getRecordTypeByte(header) != RecordType.SECRET_RANDOM_NUMBER.getByteValue()) {
-                    throw new IllegalStateException("Could not find secure random bytes header");
-                }
-                final byte[] body = readRecordBody(raf, 0, recordLength - context.getHashAlgorithm().getHashLength() - IoUtils.HEADER_LENGTH);
-                final byte[] secureRandomBytes = decryptMessageUsingPrivateKey(body, encryptingPrivateKey);
-                final byte[] hash = readRecordHash(raf, context.getHashAlgorithm());
-
-                context.getAccumulativeDigest().setSecureRandomBytesForReading(secureRandomBytes);
-                context.updateInfo(new LogRecordInfo(header, body, hash));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        static LogRecordInfo read(RandomAccessFile raf, LogReaderContext context) {
-            final byte[] header = readLogRecordHeader(raf);
-            if (header == null) {
-                return null;
-            }
-            final int recordLength = getRecordLength(header);
-            final byte[] body = readRecordBody(raf, 0, recordLength - context.getHashAlgorithm().getHashLength() - IoUtils.HEADER_LENGTH);
-            final byte[] hash = readRecordHash(raf, context.getHashAlgorithm());
-
-            LogRecordInfo logRecord = new LogRecordInfo(header, body, hash);
-            context.updateInfo(logRecord);
-            return logRecord;
-        }
-
-
-        static byte[] readRecordBody(RandomAccessFile raf, int offset, int length) {
-            byte[] record = new byte[length];
-            try {
-                long pos = raf.getFilePointer();
-                raf.seek(pos + offset);
-                int lenRead = raf.read(record, 0, length);
-                if (lenRead < length) {
-                    throw new RuntimeException("Could not read record body");
-                }
-                return record;
-            } catch (Exception e) {
-                if (e instanceof RuntimeException) {
-                    throw (RuntimeException)e;
-                }
-                throw new RuntimeException(e);
-            }
-        }
-
-        static byte[] readLogRecordHeader(RandomAccessFile raf) {
-            final byte[] header;
-            try {
-                if (raf.getFilePointer() >= raf.length()) {
-                    return null;
-                }
-                header = new byte[IoUtils.HEADER_LENGTH];
-                int length = raf.read(header, 0, IoUtils.HEADER_LENGTH);
-
-                //TODO better checks and exceptions
-                if (length < IoUtils.HEADER_LENGTH) {
-                    throw new RuntimeException("Could not read header");
-                }
-                return header;
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        private static byte[] readRecordHash(RandomAccessFile raf, HashAlgorithm hashAlgorithm) {
-            byte[] hash;
-            int length;
-            try {
-                hash = new byte[hashAlgorithm.getHashLength()];
-                length = raf.read(hash, 0, hashAlgorithm.getHashLength());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            if (length < hashAlgorithm.getHashLength()) {
-                throw new IllegalStateException("Error reading hash");
-            }
-            return hash;
-        }
-
-        private static int getRecordLength(byte[] header) {
-            return HeaderUtil.bytesToInt(header, 22);
+        @Override
+        protected void handleRecordAdded(LogReaderRecord record) {
         }
     }
-
-    private static class LogReaderContext {
-        private AccumulativeDigest accumulativeDigest;
-        private LogRecordInfo lastInfo;
-
-        void setAccumulativeDigest(AccumulativeDigest accumulativeDigest) {
-            this.accumulativeDigest = accumulativeDigest;
-        }
-
-        void updateInfo(LogRecordInfo info) {
-            accumulativeDigest.digestRecord(info.getRecordType(), info.getHeader(), info.getBody());
-            lastInfo = info;
-        }
-
-        HashAlgorithm getHashAlgorithm() {
-            return accumulativeDigest.getHashAlgorithm();
-        }
-
-        AccumulativeDigest getAccumulativeDigest() {
-            return accumulativeDigest;
-        }
-    }
-
 }

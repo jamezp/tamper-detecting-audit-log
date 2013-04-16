@@ -29,17 +29,17 @@ import java.util.concurrent.BlockingQueue;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 class SecureLoggerImpl implements SecureLogger {
-    private final BlockingQueue<LogRecord> recordQueue;
+    private final BlockingQueue<LogWriterRecord> recordQueue;
     private final File logFileDir;
     private final LogWriter logWriter;
 
-    private SecureLoggerImpl(File logFileDir, BlockingQueue<LogRecord> recordQueue, LogWriter logWriter) {
+    private SecureLoggerImpl(File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, LogWriter logWriter) {
         this.logFileDir = logFileDir;
         this.recordQueue = recordQueue;
         this.logWriter = logWriter;
     }
 
-    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogRecord> recordQueue, TrustedLocation trustedLocation) {
+    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation) {
         LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue, trustedLocation);
         SecureLoggerImpl logger = new SecureLoggerImpl(logFileDir, recordQueue, writer);
         logger.initialize();
@@ -54,7 +54,7 @@ class SecureLoggerImpl implements SecureLogger {
 
     @Override
     public void logMessage(byte[] message) {
-        recordQueue.add(new LogRecord(message, RecordType.CLIENT_LOG_DATA));
+        recordQueue.add(new LogWriterRecord(message, RecordType.CLIENT_LOG_DATA));
     }
 
     @Override

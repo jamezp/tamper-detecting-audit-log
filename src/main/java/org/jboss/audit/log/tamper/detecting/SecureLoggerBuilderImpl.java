@@ -64,7 +64,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     public SecureLogger buildLogger() throws KeyStoreInitializationException {
         KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
         TrustedLocation trustedLocation = TrustedLocation.create(keyManager, logFileDir, trustedLocationFile);
-        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogRecord>(), trustedLocation);
+        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogWriterRecord>(), trustedLocation);
         return secureLogger;
     }
 
