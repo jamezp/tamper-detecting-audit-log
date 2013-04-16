@@ -26,6 +26,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.security.PrivateKey;
 import java.security.Signature;
@@ -98,7 +99,7 @@ class LogReader {
                     if (!Arrays.equals(calculatedSignature, logInfo.signature)) {
                         throw new IllegalStateException("Signature differs");
                     }
-
+                    logInfo.lastSequenceNumber = context.lastInfo.getSequenceNumber();
 
                     return logInfo;
                 }
@@ -107,6 +108,10 @@ class LogReader {
         } finally {
             IoUtils.safeClose(raf);
         }
+    }
+
+    private void viewLogFile(OutputStream out) {
+
     }
 
     private LogFileHeaderInfo readLogFileHeader(File logFile, RandomAccessFile raf, LogReaderContext context) {
@@ -153,15 +158,15 @@ class LogReader {
         final byte[] lastFileHash;
         final byte[] lastFileSignature;
         if (lastFileInfo.getRecordType() == RecordType.LAST_FILE) {
-            final byte[] nameBytes = new byte[bytesToInt(lastFileInfo.getBody(), 0)];
+            final byte[] nameBytes = new byte[HeaderUtil.bytesToInt(lastFileInfo.getBody(), 0)];
             System.arraycopy(lastFileInfo.getBody(), 4, nameBytes, 0, nameBytes.length);
             lastFileName = new String(nameBytes);
-            lastFileHash = new byte[bytesToInt(lastFileInfo.getBody(), 4 + nameBytes.length)];
+            lastFileHash = new byte[HeaderUtil.bytesToInt(lastFileInfo.getBody(), 4 + nameBytes.length)];
             System.arraycopy(lastFileInfo.getBody(), 8 + nameBytes.length, lastFileHash, 0, lastFileHash.length);
             if (new String(lastFileHash).equals("null")) {
                 lastFileName = null;
             }
-            lastFileSignature = new byte[bytesToInt(lastFileInfo.getBody(), 8 + nameBytes.length + lastFileHash.length)];
+            lastFileSignature = new byte[HeaderUtil.bytesToInt(lastFileInfo.getBody(), 8 + nameBytes.length + lastFileHash.length)];
             System.arraycopy(lastFileInfo.getBody(), 12 + nameBytes.length + lastFileHash.length, lastFileSignature, 0, lastFileSignature.length);
         } else if (lastFileInfo.getRecordType() == RecordType.AUDITOR_NOTIFICATION) {
             lastFileName = null;
@@ -201,19 +206,11 @@ class LogReader {
         }
     }
 
-    private static int bytesToInt(byte[] bytes, int pos) {
-        int value = 0;
-        for (int i = 0; i < 4; i++) {
-            int shift = (4 - 1 - i) * 8;
-            value += (bytes[i + pos] & 0x000000FF) << shift;
-        }
-        return value;
-    }
-
     static class LogInfo {
         private LogFileHeaderInfo logFileHeaderInfo;
         private byte[] accumulatedHash;
         private byte[] signature;
+        private int lastSequenceNumber;
 
         LogInfo(LogFileHeaderInfo logFileHeaderInfo){
             this.logFileHeaderInfo = logFileHeaderInfo;
@@ -225,6 +222,10 @@ class LogReader {
 
         byte[] getAccumulatedHash() {
             return accumulatedHash;
+        }
+
+        public int getLastSequenceNumber() {
+            return lastSequenceNumber;
         }
     }
 
@@ -251,16 +252,23 @@ class LogReader {
     }
 
     private static class LogRecordInfo {
-        private final RecordType recordType;
         private final byte[] header;
         private final byte[] body;
         private final byte[] hash;
 
-        private LogRecordInfo(RecordType recordType, byte[] header, byte[] body, byte[] hash) {
-            this.recordType = recordType;
+        private LogRecordInfo(byte[] header, byte[] body, byte[] hash) {
             this.header = header;
             this.body = body;
             this.hash = hash;
+        }
+
+        int getSequenceNumber() {
+            return HeaderUtil.getSequenceNumber(header);
+        }
+
+
+        RecordType getRecordType() {
+            return RecordType.fromByte(HeaderUtil.getRecordTypeByte(header));
         }
 
         byte[] getHeader() {
@@ -282,16 +290,15 @@ class LogReader {
                     throw new IllegalStateException("Could not find hash algorithm header");
                 }
                 //int recordLength = getRecordLength(header);
-                if (getRecordTypeByte(header) != RecordType.HASH_ALGORITHM.getByteValue()) {
+                if (HeaderUtil.getRecordTypeByte(header) != RecordType.HASH_ALGORITHM.getByteValue()) {
                     throw new IllegalStateException("Could not find hash algorithm header");
                 }
                 final byte[] body = readRecordBody(raf, 0, 1);
                 final HashAlgorithm hashAlgorithm = HashAlgorithm.fromByte(body[0]);
                 final byte[] hash = readRecordHash(raf, hashAlgorithm);
                 final AccumulativeDigest accumulativeDigest = AccumulativeDigest.createForReader(hashAlgorithm, file);
-                final RecordType recordType = getRecordType(header);
                 context.setAccumulativeDigest(accumulativeDigest);
-                context.updateInfo(new LogRecordInfo(recordType, header, body, hash));
+                context.updateInfo(new LogRecordInfo(header, body, hash));
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -304,8 +311,7 @@ class LogReader {
                     throw new IllegalStateException("Could not find secure random header");
                 }
                 final int recordLength = getRecordLength(header);
-                RecordType recordType = getRecordType(header);
-                if (recordType != RecordType.SECRET_RANDOM_NUMBER) {
+                if (HeaderUtil.getRecordTypeByte(header) != RecordType.SECRET_RANDOM_NUMBER.getByteValue()) {
                     throw new IllegalStateException("Could not find secure random bytes header");
                 }
                 final byte[] body = readRecordBody(raf, 0, recordLength - context.getHashAlgorithm().getHashLength() - IoUtils.HEADER_LENGTH);
@@ -313,7 +319,7 @@ class LogReader {
                 final byte[] hash = readRecordHash(raf, context.getHashAlgorithm());
 
                 context.getAccumulativeDigest().setSecureRandomBytesForReading(secureRandomBytes);
-                context.updateInfo(new LogRecordInfo(recordType, header, body, hash));
+                context.updateInfo(new LogRecordInfo(header, body, hash));
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -327,9 +333,8 @@ class LogReader {
             final int recordLength = getRecordLength(header);
             final byte[] body = readRecordBody(raf, 0, recordLength - context.getHashAlgorithm().getHashLength() - IoUtils.HEADER_LENGTH);
             final byte[] hash = readRecordHash(raf, context.getHashAlgorithm());
-            RecordType recordType = getRecordType(header);
 
-            LogRecordInfo logRecord = new LogRecordInfo(recordType, header, body, hash);
+            LogRecordInfo logRecord = new LogRecordInfo(header, body, hash);
             context.updateInfo(logRecord);
             return logRecord;
         }
@@ -388,19 +393,7 @@ class LogReader {
         }
 
         private static int getRecordLength(byte[] header) {
-            return bytesToInt(header, 22);
-        }
-
-        RecordType getRecordType() {
-            return recordType;
-        }
-
-        private static RecordType getRecordType(byte[] header) {
-            return RecordType.fromByte(getRecordTypeByte(header));
-        }
-
-        private static byte getRecordTypeByte(byte[] header) {
-            return header[8];
+            return HeaderUtil.bytesToInt(header, 22);
         }
     }
 

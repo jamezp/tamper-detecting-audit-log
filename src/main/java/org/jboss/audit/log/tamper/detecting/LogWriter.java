@@ -124,22 +124,26 @@ class LogWriter implements Runnable {
 
     private LogReader.LogInfo verifyLogFile(File logFile) {
         LogReader reader = new LogReader(keyManager, logFile);
-        return reader.checkLogFile();
+        LogReader.LogInfo logInfo = reader.checkLogFile();
+
+        trustedLocation.checkLastLogRecord(logInfo.getLastSequenceNumber(), logInfo.getAccumulatedHash());
+
+        return logInfo;
     }
 
     private void createLastFileRecord(String lastFilename, byte[] lastAccumulatedHash, byte[] lastSignature){
         byte[] nameBytes = lastFilename.getBytes();
         byte[] buffer = new byte[nameBytes.length + lastAccumulatedHash.length + lastSignature.length + 4*3 ];
         //Write name length and name
-        System.arraycopy(intToByteArray(nameBytes.length), 0, buffer, 0, 4);
+        System.arraycopy(HeaderUtil.intToByteArray(nameBytes.length), 0, buffer, 0, 4);
         System.arraycopy(nameBytes, 0, buffer, 4, nameBytes.length);
 
         //Write last accumulated hash length and hash
-        System.arraycopy(intToByteArray(lastAccumulatedHash.length), 0, buffer, 4 + nameBytes.length , 4);
+        System.arraycopy(HeaderUtil.intToByteArray(lastAccumulatedHash.length), 0, buffer, 4 + nameBytes.length , 4);
         System.arraycopy(lastAccumulatedHash, 0, buffer, 4 + nameBytes.length + 4, lastAccumulatedHash.length);
 
         //Write last signature length and signature
-        System.arraycopy(intToByteArray(lastSignature.length), 0, buffer, 4 + nameBytes.length + 4 + lastAccumulatedHash.length , 4);   //
+        System.arraycopy(HeaderUtil.intToByteArray(lastSignature.length), 0, buffer, 4 + nameBytes.length + 4 + lastAccumulatedHash.length , 4);   //
         System.arraycopy(lastSignature, 0, buffer, 4 + nameBytes.length + 4 + lastAccumulatedHash.length + 4, lastSignature.length);   //
         logMessage(buffer, RecordType.LAST_FILE, EncryptionType.NONE);
     }
@@ -247,39 +251,9 @@ class LogWriter implements Runnable {
     }
 
     private byte[] createHeader(RecordType type, EncryptionType encryptionType, int lastLength, int currentLength) {
-        byte[] header = new byte[IoUtils.HEADER_LENGTH];
-        header[0] = (byte)0xf0;
-        header[1] = (byte)0xf0;
-        header[2] = (byte)0xf0;
-        header[3] = (byte)0xf0;
-        appendInt4Bytes(header, 4, currentSequenceNumber);
-        header[8] = type.getByteValue();
-        header[9] = encryptionType.getByteValue();
-        appendLong8Bytes(header, 10, System.currentTimeMillis());
-        appendInt4Bytes(header, 18, lastLength);
-        appendInt4Bytes(header, 22, currentLength);
-
-        return header;
-    }
-    private void appendInt4Bytes(byte[] bytes, int pos, int value) {
-        for (int i = 0; i < 4; i++) {
-            int offset = (4 - 1 - i) * 8;
-            bytes[i + pos] = (byte) ((value >>> offset) & 0xFF);
-        }
+        return HeaderUtil.createHeader(type, encryptionType, lastLength, currentLength, currentSequenceNumber);
     }
 
-    private byte[] intToByteArray(int value) {
-        byte[] bytes = new byte[4];
-        appendInt4Bytes(bytes, 0, value);
-        return bytes;
-    }
-
-    private void appendLong8Bytes(byte[] bytes, int pos, long value) {
-        for (int i = 0; i < 8; i++) {
-            int offset = (8 - 1 - i) * 8;
-            bytes[i + pos] = (byte) ((value >>> offset) & 0xFF);
-        }
-    }
 
     String getLogFileName() {
         return currentLogFile.getName();

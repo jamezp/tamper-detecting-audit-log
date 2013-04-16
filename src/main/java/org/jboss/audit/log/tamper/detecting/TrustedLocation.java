@@ -25,6 +25,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.util.Arrays;
 
 import javax.crypto.Cipher;
 
@@ -46,13 +47,16 @@ class TrustedLocation {
     private final File previousLogFile;
     private final File currentInspectionLogFile;
     private final byte[] lastAccumulativeHash;
+    private final int lastSequenceNumber;
 
-    private TrustedLocation(KeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile, int lastSequenceNumber, byte[] lastAccumulativeHash) {
+    private TrustedLocation(KeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile,
+            int lastSequenceNumber, byte[] lastAccumulativeHash) {
         this.keyManager = keyManager;
         this.trustedLocationFile = trustedLocationFile;
         this.previousLogFile = previousLogFile;
         this.currentInspectionLogFile = currentInspectionLogFile;
         this.lastAccumulativeHash = lastAccumulativeHash;
+        this.lastSequenceNumber = lastSequenceNumber;
     }
 
 
@@ -81,7 +85,7 @@ class TrustedLocation {
                 throw new IllegalStateException("Cannot find the current log file for verification " + currentInspectionFile);
             }
             lastAccumulativeHash = content.lastAccumulativeHash;
-            lastSequenceNumber = content.lastSN;
+            lastSequenceNumber = content.lastSequenceNumber;
         }
 
         TrustedLocation trustedLocation = new TrustedLocation(keyManager, logFileDir, trustedLocationFile, lastLogFile, currentInspectionFile, lastSequenceNumber, lastAccumulativeHash);
@@ -130,7 +134,7 @@ class TrustedLocation {
 
     private static class Content {
         private volatile String lastFileName;
-        private volatile int lastSN;
+        private volatile int lastSequenceNumber;
         private volatile byte[] lastAccumulativeHash;
 
         private int read(KeyManager keyManager, File trustedLocation) {
@@ -162,7 +166,7 @@ class TrustedLocation {
                 ASN1Sequence sequence = (ASN1Sequence)aIn.readObject();
 
                 lastFileName = ((DERIA5String)sequence.getObjectAt(0)).getString();
-                lastSN = ((ASN1Integer)sequence.getObjectAt(1)).getValue().intValue();
+                lastSequenceNumber = ((ASN1Integer)sequence.getObjectAt(1)).getValue().intValue();
                 lastAccumulativeHash = ((DEROctetString)sequence.getObjectAt(2)).getOctets();
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -185,5 +189,17 @@ class TrustedLocation {
             throw new RuntimeException(e);
         }
         return bout.toByteArray();
+    }
+
+
+    void checkLastLogRecord(int lastSequenceNumberFromLogFile, byte[] accumulatedHashFromLogFile) {
+        if (currentInspectionLogFile != null) {
+            if (lastSequenceNumberFromLogFile != this.lastSequenceNumber) {
+                throw new IllegalStateException("The sequence number in " + currentInspectionLogFile + " was " + lastSequenceNumberFromLogFile + " but the trusted location has this as " + this.lastSequenceNumber);
+            }
+            if (!Arrays.equals(accumulatedHashFromLogFile, this.lastAccumulativeHash)) {
+                throw new IllegalStateException("The accumulated hash is different in " + currentInspectionLogFile + " and in the trusted location");
+            }
+        }
     }
 }
