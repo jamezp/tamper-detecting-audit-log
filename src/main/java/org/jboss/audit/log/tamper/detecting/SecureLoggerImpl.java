@@ -24,6 +24,8 @@ package org.jboss.audit.log.tamper.detecting;
 import java.io.File;
 import java.util.concurrent.BlockingQueue;
 
+import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
+
 /**
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
@@ -39,8 +41,8 @@ class SecureLoggerImpl implements SecureLogger {
         this.logWriter = logWriter;
     }
 
-    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation) {
-        LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue, trustedLocation);
+    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo) {
+        LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue, trustedLocation, lastLogInfo);
         SecureLoggerImpl logger = new SecureLoggerImpl(logFileDir, recordQueue, writer);
         logger.initialize();
         return logger;
@@ -62,8 +64,4 @@ class SecureLoggerImpl implements SecureLogger {
         recordQueue.add(logWriter.getCloseLogRecord());
         logWriter.awaitClose();
     }
-
-
-
-    //TODO heart beat
 }

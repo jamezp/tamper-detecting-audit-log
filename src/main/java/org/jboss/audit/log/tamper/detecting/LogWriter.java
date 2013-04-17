@@ -38,6 +38,8 @@ import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 
+import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
+
 class LogWriter implements Runnable {
     private final KeyManager keyManager;
     private final BlockingQueue<LogWriterRecord> recordQueue;
@@ -62,13 +64,13 @@ class LogWriter implements Runnable {
         this.accumulativeDigest = AccumulativeDigest.createForWriter(keyManager.getHashAlgorithm(), secureRandomBytes);
     }
 
-    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation) {
+    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo) {
         LogWriter writer = new LogWriter(keyManager, logFileDir, recordQueue, trustedLocation);
-        writer.createNewLogFile();
+        writer.createNewLogFile(lastLogInfo);
         return writer;
     }
 
-    private File createNewLogFile() {
+    private File createNewLogFile(LogInfo lastLogInfo) {
         logFile = logFileNameUtil.generateNewLogFileName();
         System.out.println("-------> NEW FILE " + logFile);
         accumulativeDigest.resetForNewFile(logFile);
@@ -103,13 +105,13 @@ class LogWriter implements Runnable {
         logMessage(rawKey, RecordType.SYMMETRIC_ENCRYPTION_KEY, EncryptionType.ASSYMETRIC, keyManager.getViewingPublicKey());
         logMessage(keyManager.getSigningPublicKeyCert(), RecordType.CERTIFICATE, EncryptionType.NONE);
         writeSignature(RecordType.HEADER_SIGNATURE);
-        createLastLogFileRecord();
+        createLastLogFileRecord(lastLogInfo);
         trustedLocation.write(logFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
 
         return logFile;
     }
 
-    private void createLastLogFileRecord() {
+    private void createLastLogFileRecord(LogInfo lastLogInfo) {
         if (trustedLocation.getPreviousLogFile() == null && trustedLocation.getCurrentInspectionLogFile() == null) {
             createLastFileRecord("This is the very first file in the log sequence", "null".getBytes(), "null".getBytes());
         } else if (trustedLocation.getPreviousLogFile() != null && trustedLocation.getCurrentInspectionLogFile() == null) {
@@ -117,18 +119,8 @@ class LogWriter implements Runnable {
             logMessage("Trusted location is missing and reconstructed".getBytes(), RecordType.AUDITOR_NOTIFICATION, EncryptionType.NONE);
             //TODO more verification
         } else if (trustedLocation.getCurrentInspectionLogFile() != null){
-            LogReader.LogInfo lastInfo = verifyLogFile(trustedLocation.getCurrentInspectionLogFile());
-            createLastFileRecord(trustedLocation.getCurrentInspectionLogFile().getName(), trustedLocation.getAccumulatedMessageHash(), lastInfo.getSignature());
+            createLastFileRecord(trustedLocation.getCurrentInspectionLogFile().getName(), trustedLocation.getAccumulatedMessageHash(), lastLogInfo.getSignature());
         }
-    }
-
-    private LogReader.LogInfo verifyLogFile(File logFile) {
-        LogReader reader = new LogReader(keyManager, logFile);
-        LogReader.LogInfo logInfo = reader.checkLogFile();
-
-        trustedLocation.checkLastLogRecord(logInfo.getLastSequenceNumber(), logInfo.getAccumulatedHash());
-
-        return logInfo;
     }
 
     private void createLastFileRecord(String lastFilename, byte[] lastAccumulatedHash, byte[] lastSignature){

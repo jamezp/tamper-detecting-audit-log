@@ -24,6 +24,8 @@ package org.jboss.audit.log.tamper.detecting;
 import java.io.File;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
+
 class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
 
     private KeyPairBuilderImpl encryptingStore;
@@ -64,15 +66,15 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     public SecureLogger buildLogger() throws KeyStoreInitializationException {
         KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
         TrustedLocation trustedLocation = TrustedLocation.create(keyManager, logFileDir, trustedLocationFile);
-        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogWriterRecord>(), trustedLocation);
+        LogInfo lastLogInfo = null;
+        if (trustedLocation.getCurrentInspectionLogFile() != null) {
+            LogReader reader = new LogReader(keyManager, trustedLocation.getCurrentInspectionLogFile());
+            lastLogInfo = reader.checkLogFile();
+            trustedLocation.checkLastLogRecord(lastLogInfo);
+
+        }
+        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogWriterRecord>(), trustedLocation, lastLogInfo);
         return secureLogger;
-    }
-
-    @Override
-    public SecureLogReader buildReader() throws KeyStoreInitializationException {
-        KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
-        return null;
-
     }
 
     private class KeyPairBuilderImpl implements SigningKeyPairBuilder, EncryptingKeyPairBuilder {
@@ -146,7 +148,6 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
 
         }
     }
-
 
     private enum KeyStoreType {
         SIGNING,

@@ -44,6 +44,7 @@ abstract class LogReaderRecordListener {
         } else {
             accumulativeDigest.digestRecordAndCheck(record.getRecordType(), record.getHeader(), record.getBody(), record.getHash());
         }
+        handleRecordAdded(record);
     }
 
     protected abstract void handleRecordAdded(LogReaderRecord record);

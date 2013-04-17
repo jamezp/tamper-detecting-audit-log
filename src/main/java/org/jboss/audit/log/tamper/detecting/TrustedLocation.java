@@ -35,6 +35,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequenceGenerator;
+import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
 
 /**
  *
@@ -192,12 +193,26 @@ class TrustedLocation {
     }
 
 
-    void checkLastLogRecord(int lastSequenceNumberFromLogFile, byte[] accumulatedHashFromLogFile) {
+    void checkLastLogRecord(LogInfo lastLogInfo) {
         if (currentInspectionLogFile != null) {
-            if (lastSequenceNumberFromLogFile != this.lastSequenceNumber) {
-                throw new IllegalStateException("The sequence number in " + currentInspectionLogFile + " was " + lastSequenceNumberFromLogFile + " but the trusted location has this as " + this.lastSequenceNumber);
+            if (lastLogInfo.getLastSequenceNumber() != lastSequenceNumber) {
+                if (lastLogInfo.getLastSequenceNumber() == lastSequenceNumber - 1 && (lastLogInfo.getAccumulatedHash() == null || lastLogInfo.getSignature() == null)) {
+                    //We could have crashed between writing the log record and updating the trusted location
+                    throw new IllegalStateException("The sequence number for the last log file " + lastLogInfo.getFileName() + " is " +
+                            lastLogInfo.getLastSequenceNumber() + " while " + trustedLocationFile + " has a sequence number of " + lastSequenceNumber + "." +
+                            		" It is possible that there was a system crash between writing the two records, and the last log file also has not been signed off.");
+                }
+
+
+                throw new IllegalStateException("The sequence number in " + currentInspectionLogFile + " was " + lastLogInfo.getLastSequenceNumber() + " but the trusted location has this as " + this.lastSequenceNumber);
             }
-            if (!Arrays.equals(accumulatedHashFromLogFile, this.lastAccumulativeHash)) {
+            if (lastLogInfo.getAccumulatedHash() == null) {
+                throw new IllegalStateException("The last log file " + lastLogInfo.getAccumulatedHash() + " does not have an accumulated hash. It might have been tampered with");
+            }
+            if (lastLogInfo.getSignature() == null) {
+                throw new IllegalStateException("The last log file " + lastLogInfo.getSignature() + " does not have a signature. It might have been tampered with");
+            }
+            if (!Arrays.equals(lastLogInfo.getAccumulatedHash(), this.lastAccumulativeHash)) {
                 throw new IllegalStateException("The accumulated hash is different in " + currentInspectionLogFile + " and in the trusted location");
             }
         }

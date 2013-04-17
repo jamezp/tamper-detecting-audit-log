@@ -23,8 +23,11 @@ package org.jboss.audit.log.tamper.detecting;
 
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.security.PrivateKey;
 import java.security.Signature;
@@ -57,6 +60,13 @@ class LogReader {
         return readLogFile(new SimpleCheckLogFileRecordListener());
     }
 
+    LogInfo outputLogFile() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        LogInfo logInfo = readLogFile(new OutputtingLogFileRecordListener(out));
+        System.out.println(new String(out.toByteArray()));
+        return logInfo;
+    }
+
     LogInfo readLogFile(LogReaderRecordListener listener) {
         final RandomAccessFile raf;
         try {
@@ -66,7 +76,7 @@ class LogReader {
         }
         try {
             final LogFileHeaderInfo logFileHeaderInfo = readLogFileHeader(logFile, raf, listener);
-            final LogInfo logInfo = new LogInfo(logFileHeaderInfo);
+            final LogInfo logInfo = new LogInfo(logFile, logFileHeaderInfo);
             while (true) {
                 final LogReaderRecord logRecordInfo = LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest);
                 listener.recordAdded(logRecordInfo);
@@ -80,7 +90,7 @@ class LogReader {
                     logInfo.accumulatedHash = logRecordInfo.getBody();
 
                     final LogReaderRecord signatureInfo = LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest);
-                    listener.recordAdded(logRecordInfo);
+                    listener.recordAdded(signatureInfo);
                     checkRecordType(signatureInfo, RecordType.LOG_FILE_SIGNATURE);
                     logInfo.signature = signatureInfo.getBody();
                     if (LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest) != null) {
@@ -221,12 +231,14 @@ class LogReader {
     }
 
     static class LogInfo {
-        private LogFileHeaderInfo logFileHeaderInfo;
+        private final File logFile;
+        private final LogFileHeaderInfo logFileHeaderInfo;
         private byte[] accumulatedHash;
         private byte[] signature;
         private int lastSequenceNumber;
 
-        LogInfo(LogFileHeaderInfo logFileHeaderInfo){
+        LogInfo(File logFile, LogFileHeaderInfo logFileHeaderInfo){
+            this.logFile = logFile;
             this.logFileHeaderInfo = logFileHeaderInfo;
         }
 
@@ -241,16 +253,20 @@ class LogReader {
         public int getLastSequenceNumber() {
             return lastSequenceNumber;
         }
+
+        public File getFileName() {
+            return logFile;
+        }
     }
 
-    private static class LogFileHeaderInfo {
-        final AccumulativeDigest accumulativeDigest;
-        final SecretKey secretKey;
-        final Certificate signingCertificate;
-        final byte[] headerSignature;
-        final String lastFileName;
-        final byte[] lastFileHash;
-        final byte[] lastSignature;
+    static class LogFileHeaderInfo {
+        private final AccumulativeDigest accumulativeDigest;
+        private final SecretKey secretKey;
+        private final Certificate signingCertificate;
+        private final byte[] headerSignature;
+        private final String lastFileName;
+        private final byte[] lastFileHash;
+        private final byte[] lastSignature;
 
         LogFileHeaderInfo(final AccumulativeDigest accumulativeDigest, final SecretKey secretKey,
                 final Certificate signingCertificate, final byte[] headerSignature, final String lastFileName, final byte[] lastFileHash,
@@ -274,4 +290,30 @@ class LogReader {
         protected void handleRecordAdded(LogReaderRecord record) {
         }
     }
+
+    private static class OutputtingLogFileRecordListener extends LogReaderRecordListener {
+        final OutputStream out;
+        OutputtingLogFileRecordListener(OutputStream out){
+            super(true);
+            this.out = out;
+        }
+
+        protected void handleRecordAdded(LogReaderRecord record) {
+            StringBuffer sb = new StringBuffer();
+            sb.append("Sequence Number: " + record.getSequenceNumber() + "\n");
+            sb.append("Record Type: " + record.getRecordType() + "\n");
+            sb.append("Encryption Type: " + record.getEncryptionType() + "\n");
+            sb.append("Timestamp: " + record.getTimestamp() + "\n");
+            sb.append("Last Record Length: " + record.getLastRecordLength() + "\n");
+            sb.append("Record Length: " + record.getRecordLength() + "\n");
+            sb.append("\n");
+            try {
+                out.write(sb.toString().getBytes());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
 }
+
+

@@ -36,24 +36,40 @@ public class LogReaderRecord {
         this.hash = hash;
     }
 
-    int getSequenceNumber() {
+    public int getSequenceNumber() {
         return HeaderUtil.getSequenceNumber(header);
     }
 
 
-    RecordType getRecordType() {
+    public RecordType getRecordType() {
         return RecordType.fromByte(HeaderUtil.getRecordTypeByte(header));
     }
 
-    byte[] getHeader() {
+    public EncryptionType getEncryptionType() {
+        return EncryptionType.fromByte(HeaderUtil.getEncryptionTypeByte(header));
+    }
+
+    public long getTimestamp() {
+        return HeaderUtil.getTimeStamp(header);
+    }
+
+    public int getRecordLength() {
+        return HeaderUtil.getCurrentLength(header);
+    }
+
+    public int getLastRecordLength() {
+        return HeaderUtil.getLastLength(header);
+    }
+
+    public byte[] getHeader() {
         return header;
     }
 
-    byte[] getBody() {
+    public byte[] getBody() {
         return body;
     }
 
-    byte[] getHash() {
+    public byte[] getHash() {
         return hash;
     }
 

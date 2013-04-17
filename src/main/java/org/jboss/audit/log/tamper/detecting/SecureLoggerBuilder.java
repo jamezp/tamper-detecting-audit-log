@@ -41,8 +41,6 @@ public interface SecureLoggerBuilder {
 
     SecureLogger buildLogger() throws KeyStoreInitializationException;
 
-    SecureLogReader buildReader() throws KeyStoreInitializationException;
-
     interface SigningKeyPairBuilder {
         SigningKeyPairBuilder setPath(File location);
         SigningKeyPairBuilder setStorePassword(String password);
