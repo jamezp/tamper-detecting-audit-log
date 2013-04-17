@@ -25,7 +25,6 @@ import java.io.File;
 import java.io.FilenameFilter;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
-import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -67,42 +66,40 @@ class LogFileNameUtil {
             return null;
         }
 
-        Calendar currentDate = logFilename == null ? null : getDatestamp(logFilename);
+        String currentDate = logFilename == null ? null : getDatestamp(logFilename);
         int currentSeq = logFilename == null ? 0 : getSequence(logFilename);
         if (logFilename != null && getSequence(logFilename) == 0) {
-            return null; // it is already the very first log file.
+            return null;
         }
-        Calendar latestDate = null;
-        Calendar nextDate = null;
+        String latestDate = null;
+        String nextDate = null;
         int latest = 0, latestSeq = 0, nextSeq = 0;
 
         for (int i = 0; i < files.length ; i++) {
-            if (files[i].endsWith(".dat") && files[i].substring(0, 5).equals("audit")) {
-                nextDate = getDatestamp(files[i]);
-                nextSeq = getSequence(files[i]);
-                if (currentDate == null) {
-                    if (latestDate == null || latestDate.before(nextDate)
-                            || (latestSeq < nextSeq && !latestDate.after(nextDate))) {
-                        latestDate = nextDate;
-                        latestSeq = nextSeq;
-                        latest = i;
-                    }
-                } else {
-                    if (latestDate == null || (latestDate.before(nextDate)) && (nextDate.before(currentDate))
-                            || (latestSeq < nextSeq && nextSeq < currentSeq)) {
-                        latestDate = nextDate;
-                        latestSeq = nextSeq;
-                        latest = i;
-                    }
-
+            nextDate = getDatestamp(files[i]);
+            nextSeq = getSequence(files[i]);
+            if (currentDate == null) {
+                if (latestDate == null || latestDate.compareTo(nextDate) < 0
+                        || (latestSeq < nextSeq && latestDate.compareTo(nextDate) >= 0)) {
+                    latestDate = nextDate;
+                    latestSeq = nextSeq;
+                    latest = i;
                 }
+            } else {
+                if (latestDate == null || (latestDate.compareTo(nextDate) < 0) && (nextDate.compareTo(currentDate) < 0)
+                        || (latestSeq < nextSeq && nextSeq < currentSeq)) {
+                    latestDate = nextDate;
+                    latestSeq = nextSeq;
+                    latest = i;
+                }
+
             }
         }
         if (logFilename == null) {
             lastLogSequence.set(latestSeq);
         }
 
-        if (latestDate == currentDate) {
+        if (latestDate.equals(currentDate)) {
             return null;
         }
         return new File(logFileDir, files[latest]);
@@ -118,20 +115,8 @@ class LogFileNameUtil {
         return getPreviousLogFilename(null);
     }
 
-    private Calendar getDatestamp(String logName) {
-
-        Calendar thisDate = new GregorianCalendar();
-        dateFormat.setCalendar(thisDate);
-        try {
-            Date d1 = dateFormat.parse(logName, new java.text.ParsePosition(5));
-            thisDate.setTime(d1);
-        } catch (Exception e) {
-            // TODO better logging
-            e.printStackTrace();
-        }
-
-        return thisDate;
-
+    private String getDatestamp(String logName) {
+        return logName.substring(5, 27);
     }
 
     public int getLastLogSequence() {
