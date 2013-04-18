@@ -26,6 +26,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.Arrays;
+import java.util.Collections;
 
 import javax.crypto.Cipher;
 
@@ -36,6 +37,8 @@ import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequenceGenerator;
 import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
+import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
+import org.jboss.audit.log.tamper.detecting.RecoverableErrorContext.RecoverCallback;
 
 /**
  *
@@ -49,47 +52,62 @@ class TrustedLocation {
     private final File currentInspectionLogFile;
     private final byte[] lastAccumulativeHash;
     private final int lastSequenceNumber;
+    private final boolean inspectingPreviousLogFile;
 
     private TrustedLocation(KeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile,
-            int lastSequenceNumber, byte[] lastAccumulativeHash) {
+            int lastSequenceNumber, byte[] lastAccumulativeHash, boolean inspectingPreviousLogFile) {
         this.keyManager = keyManager;
         this.trustedLocationFile = trustedLocationFile;
         this.previousLogFile = previousLogFile;
         this.currentInspectionLogFile = currentInspectionLogFile;
         this.lastAccumulativeHash = lastAccumulativeHash;
         this.lastSequenceNumber = lastSequenceNumber;
+        this.inspectingPreviousLogFile = inspectingPreviousLogFile;
     }
 
 
-    static TrustedLocation create(KeyManager keyManager, File logFileDir, File trustedLocationFile) {
+    static TrustedLocation create(final RecoverableErrorContext recoverableContext, final KeyManager keyManager, final File logFileDir, final File trustedLocationFile) throws RecoverableException {
         final LogFileNameUtil logFileNameUtil = new LogFileNameUtil(logFileDir);
-        File lastLogFile = logFileNameUtil.getPreviousLogFilename(null);
+        final File lastLogFile = logFileNameUtil.getPreviousLogFilename(null);
         File currentInspectionFile = null;
         byte[] lastAccumulativeHash = null;
         int lastSequenceNumber = 0;
+        boolean inspectingPreviousLogFile = false;
         if (!trustedLocationFile.exists()) {
-            if (lastLogFile != null) {
-                //TODO be able to override this
-                throw new IllegalStateException("The trusted location " + trustedLocationFile + " does not exist, and log files were found in " + logFileDir);
-            }
+            recoverableContext.trustedLocationDoesNotExistWhileLogFilesExist(
+                    trustedLocationFile,
+                    Collections.singletonMap(RecoverAction.CREATE_TRUSTED_LOCATION, RecreateTrustedLocationCallback.create(trustedLocationFile)));
         } else {
-            Content content = new Content();
-            int status = content.read(keyManager, trustedLocationFile);
-            if (status == -1) {
-                //TODO be able to override this
-                throw new IllegalStateException("The trusted location " + trustedLocationFile + " is corrupt and may have been tampered with");
+            Content content = null;
+            try {
+                content = Content.read(keyManager, trustedLocationFile);
+            } catch (Exception e) {
+                recoverableContext.trustedLocationExistsButIsCorrupt(
+                        trustedLocationFile,
+                        e,
+                        Collections.singletonMap(RecoverAction.REBUILD_TRUSTED_LOCATION, RecreateTrustedLocationCallback.create(trustedLocationFile)));
             }
 
-            currentInspectionFile = new File(logFileDir, content.lastFileName);
-            if (!currentInspectionFile.exists()) {
-                //TODO be able to override this
-                throw new IllegalStateException("Cannot find the current log file for verification " + currentInspectionFile);
+            if (content != null) {
+                currentInspectionFile = new File(logFileDir, content.lastFileName);
+                if (!currentInspectionFile.exists()) {
+                    currentInspectionFile = recoverableContext.trustedLocationCurrentFileDoesNotExist(
+                            currentInspectionFile.getName(),
+                            lastLogFile,
+                            Collections.singletonMap(RecoverAction.INSPECT_LAST_LOG_FILE, (RecoverCallback<File>)new RecoverCallback<File>() {
+                                @Override
+                                public File repair() {
+                                    return lastLogFile;
+                                }
+                            }));
+                    inspectingPreviousLogFile = true;
+                }
+                lastAccumulativeHash = content.lastAccumulativeHash;
+                lastSequenceNumber = content.lastSequenceNumber;
             }
-            lastAccumulativeHash = content.lastAccumulativeHash;
-            lastSequenceNumber = content.lastSequenceNumber;
         }
 
-        TrustedLocation trustedLocation = new TrustedLocation(keyManager, logFileDir, trustedLocationFile, lastLogFile, currentInspectionFile, lastSequenceNumber, lastAccumulativeHash);
+        TrustedLocation trustedLocation = new TrustedLocation(keyManager, logFileDir, trustedLocationFile, lastLogFile, currentInspectionFile, lastSequenceNumber, lastAccumulativeHash, inspectingPreviousLogFile);
         return trustedLocation;
     }
 
@@ -105,12 +123,11 @@ class TrustedLocation {
         return lastAccumulativeHash;
     }
 
-
     int write(File logFile, int sequenceNumber, byte[] accumulatedHash) {
         byte [] fileBytes = null;
         byte [] asn1Block = generateASN1Block(logFile.getName(), sequenceNumber, accumulatedHash);
         if (asn1Block == null) {
-            throw new RuntimeException("Could not generate ASN1 block");
+            throw new RuntimeException("Could not generate ASN1 block when writing trusted location");
         }
 
         try{
@@ -133,50 +150,67 @@ class TrustedLocation {
         return 1;
     }
 
-    private static class Content {
-        private volatile String lastFileName;
-        private volatile int lastSequenceNumber;
-        private volatile byte[] lastAccumulativeHash;
-
-        private int read(KeyManager keyManager, File trustedLocation) {
-            byte[] fileBytes = new byte[(int)trustedLocation.length()];
-            if (trustedLocation.exists()) {
-                byte[] decryptedBytes = null;
-                try {
-                    final RandomAccessFile raf = new RandomAccessFile(trustedLocation, "rw");
-                    try {
-                        raf.read(fileBytes);
-                        Cipher cipher = Cipher.getInstance("PBEWithMD5AndDES");
-                        cipher.init(Cipher.DECRYPT_MODE, keyManager.getSecretKey(), keyManager.getPbeParameterSpec());
-                        decryptedBytes = cipher.doFinal(fileBytes);
-
-                    } finally {
-                        IoUtils.safeClose(raf);
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
+    void checkLastLogRecord(final RecoverableErrorContext recoverableContext, final LogInfo lastLogInfo) throws RecoverableException {
+        if (currentInspectionLogFile != null && !inspectingPreviousLogFile) {
+            if (lastLogInfo.getLastSequenceNumber() != lastSequenceNumber) {
+                if (lastLogInfo.getLastSequenceNumber() == lastSequenceNumber + 1
+                    /*&& (lastLogInfo.getAccumulatedHash() == null || lastLogInfo.getSignature() == null)*/) { //not sure the hash and sig checks are needed
+                    recoverableContext.possibleCrashBetweenWritingLogRecordAndUpdatingTrustedLocation(
+                            lastLogInfo.getLogFile(),
+                            lastLogInfo.getLastSequenceNumber(),
+                            lastSequenceNumber,
+                            Collections.singletonMap(RecoverAction.REPAIR_TRUSTED_LOCATION, (RecoverCallback<Void>)new RecoverCallback<Void>() {
+                                @Override
+                                public Void repair() {
+                                    write(currentInspectionLogFile, lastLogInfo.getLastSequenceNumber(), lastLogInfo.getAccumulativeDigest().getAccumulativeHash());
+                                    return null;
+                                }
+                            }));
+                    return;
+                } else {
+                    throw new IllegalStateException("The sequence number in " + currentInspectionLogFile + " was " + lastLogInfo.getLastSequenceNumber() + " but the trusted location has this as " + this.lastSequenceNumber);
                 }
-                return extractASN1Block(decryptedBytes);
+            } else if (lastLogInfo.getAccumulatedHash() != null && !Arrays.equals(lastLogInfo.getAccumulatedHash(), this.lastAccumulativeHash)) {
+                throw new IllegalStateException("The accumulated hash is different in " + currentInspectionLogFile + " and in the trusted location");
             }
-            return 0;
-        }
 
-        private int extractASN1Block (byte[] asn1Block){
-            ASN1InputStream aIn = new ASN1InputStream(asn1Block);
-            try {
-                ASN1Sequence sequence = (ASN1Sequence)aIn.readObject();
-
-                lastFileName = ((DERIA5String)sequence.getObjectAt(0)).getString();
-                lastSequenceNumber = ((ASN1Integer)sequence.getObjectAt(1)).getValue().intValue();
-                lastAccumulativeHash = ((DEROctetString)sequence.getObjectAt(2)).getOctets();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            } finally {
-                IoUtils.safeClose(aIn);
+            if (lastLogInfo.getAccumulatedHash() == null) {
+                recoverableContext.lastLogFileDoesNotHaveAnAccumulatedHash(
+                        lastLogInfo.getLogFile(),
+                        Collections.singletonMap(RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH, (RecoverCallback<Void>)new RecoverCallback<Void>() {
+                            @Override
+                            public Void repair() {
+                                try {
+                                    LogWriter.createForFixing(keyManager, lastLogInfo.getLogFile(), TrustedLocation.this, lastLogInfo.getAccumulativeDigest(),
+                                            lastSequenceNumber, lastLogInfo.getLastRecordLength())
+                                            .writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter();
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                                return null;
+                            }
+                        }));
+            } else if (lastLogInfo.getSignature() == null) {
+                recoverableContext.lastLogFileDoesNotHaveASignature(
+                        lastLogInfo.getLogFile(),
+                        Collections.singletonMap(RecoverAction.REPAIR_MISSING_SIGNATURE, (RecoverCallback<Void>)new RecoverCallback<Void>() {
+                            @Override
+                            public Void repair() {
+                                try {
+                                    LogWriter.createForFixing(keyManager, lastLogInfo.getLogFile(), TrustedLocation.this, lastLogInfo.getAccumulativeDigest(),
+                                            lastSequenceNumber, lastLogInfo.getLastRecordLength())
+                                            .writeMissingSignatureRecordAndCloseWriter();
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                                return null;
+                            }
+                        }));
+                return;
             }
-            return 0;
         }
     }
+
 
     private byte[] generateASN1Block(String logFileName, int sequenceNumber, byte[] accumulatedHash){
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
@@ -192,29 +226,75 @@ class TrustedLocation {
         return bout.toByteArray();
     }
 
+    static class Content {
+        private volatile String lastFileName;
+        private volatile int lastSequenceNumber;
+        private volatile byte[] lastAccumulativeHash;
 
-    void checkLastLogRecord(LogInfo lastLogInfo) {
-        if (currentInspectionLogFile != null) {
-            if (lastLogInfo.getLastSequenceNumber() != lastSequenceNumber) {
-                if (lastLogInfo.getLastSequenceNumber() == lastSequenceNumber - 1 && (lastLogInfo.getAccumulatedHash() == null || lastLogInfo.getSignature() == null)) {
-                    //We could have crashed between writing the log record and updating the trusted location
-                    throw new IllegalStateException("The sequence number for the last log file " + lastLogInfo.getFileName() + " is " +
-                            lastLogInfo.getLastSequenceNumber() + " while " + trustedLocationFile + " has a sequence number of " + lastSequenceNumber + "." +
-                            		" It is possible that there was a system crash between writing the two records, and the last log file also has not been signed off.");
-                }
+        private Content (String lastFileName, int lastSequenceNumber, byte[] lastAccumulativeHash) {
+            this.lastFileName = lastFileName;
+            this.lastSequenceNumber = lastSequenceNumber;
+            this.lastAccumulativeHash = lastAccumulativeHash;
+        }
 
-
-                throw new IllegalStateException("The sequence number in " + currentInspectionLogFile + " was " + lastLogInfo.getLastSequenceNumber() + " but the trusted location has this as " + this.lastSequenceNumber);
-            }
-            if (lastLogInfo.getAccumulatedHash() == null) {
-                throw new IllegalStateException("The last log file " + lastLogInfo.getAccumulatedHash() + " does not have an accumulated hash. It might have been tampered with");
-            }
-            if (lastLogInfo.getSignature() == null) {
-                throw new IllegalStateException("The last log file " + lastLogInfo.getSignature() + " does not have a signature. It might have been tampered with");
-            }
-            if (!Arrays.equals(lastLogInfo.getAccumulatedHash(), this.lastAccumulativeHash)) {
-                throw new IllegalStateException("The accumulated hash is different in " + currentInspectionLogFile + " and in the trusted location");
+        private static Content read(KeyManager keyManager, File trustedLocationFile) throws Exception {
+            byte[] fileBytes = new byte[(int)trustedLocationFile.length()];
+            byte[] decryptedBytes = null;
+            final RandomAccessFile raf = new RandomAccessFile(trustedLocationFile, "rw");
+            try {
+                raf.read(fileBytes);
+                Cipher cipher = Cipher.getInstance("PBEWithMD5AndDES");
+                cipher.init(Cipher.DECRYPT_MODE, keyManager.getSecretKey(), keyManager.getPbeParameterSpec());
+                decryptedBytes = cipher.doFinal(fileBytes);
+                return extractASN1Block(decryptedBytes);
+            } finally {
+                IoUtils.safeClose(raf);
             }
         }
+
+        private static Content extractASN1Block (byte[] asn1Block) throws Exception {
+            ASN1InputStream aIn = new ASN1InputStream(asn1Block);
+            try {
+                ASN1Sequence sequence = (ASN1Sequence)aIn.readObject();
+                String lastFileName = ((DERIA5String)sequence.getObjectAt(0)).getString();
+                int lastSequenceNumber = ((ASN1Integer)sequence.getObjectAt(1)).getValue().intValue();
+                byte[] lastAccumulativeHash = ((DEROctetString)sequence.getObjectAt(2)).getOctets();
+
+                return new Content(lastFileName, lastSequenceNumber, lastAccumulativeHash);
+            } finally {
+                IoUtils.safeClose(aIn);
+            }
+        }
+    }
+
+    private static class RecreateTrustedLocationCallback implements RecoverCallback<Void>{
+
+        private final File trustedLocationFile;
+
+        private RecreateTrustedLocationCallback(final File trustedLocationFile) {
+            this.trustedLocationFile = trustedLocationFile;
+        }
+
+        static RecoverCallback<Void> create(final File trustedLocationFile){
+            return new RecreateTrustedLocationCallback(trustedLocationFile);
+        }
+
+        @Override
+        public Void repair() {
+            boolean created = false;
+            try {
+                trustedLocationFile.delete();
+                created = trustedLocationFile.createNewFile();
+                if (!created) {
+                    created = trustedLocationFile.exists();
+                }
+            } catch (IOException e) {
+            }
+            if (!created) {
+                throw new IllegalStateException("Failed to create " + trustedLocationFile);
+            }
+            return null;
+        }
+
     }
 }

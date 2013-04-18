@@ -88,6 +88,9 @@ public class LogReaderRecord {
             final byte[] hash = readRecordHash(raf, hashAlgorithm);
             return new LogReaderRecord(header, body, hash);
         } catch (Exception e) {
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException)e;
+            }
             throw new RuntimeException(e);
         }
     }

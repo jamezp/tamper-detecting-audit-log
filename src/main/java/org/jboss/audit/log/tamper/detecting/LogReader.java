@@ -67,6 +67,7 @@ class LogReader {
         return logInfo;
     }
 
+
     LogInfo readLogFile(LogReaderRecordListener listener) {
         final RandomAccessFile raf;
         try {
@@ -79,10 +80,15 @@ class LogReader {
             final LogInfo logInfo = new LogInfo(logFile, logFileHeaderInfo);
             while (true) {
                 final LogReaderRecord logRecordInfo = LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest);
+                if (logRecordInfo == null) {
+                    return logInfo;
+                }
+
+                logInfo.updateLastRecord(logRecordInfo);
                 listener.recordAdded(logRecordInfo);
+
                 if (logRecordInfo.getRecordType() == RecordType.CLIENT_LOG_DATA || logRecordInfo.getRecordType() == RecordType.HEARTBEAT) {
                     //TODO Read the log records
-
 
                 } else {
                     //Read the end of the file
@@ -90,30 +96,36 @@ class LogReader {
                     logInfo.accumulatedHash = logRecordInfo.getBody();
 
                     final LogReaderRecord signatureInfo = LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest);
-                    listener.recordAdded(signatureInfo);
-                    checkRecordType(signatureInfo, RecordType.LOG_FILE_SIGNATURE);
-                    logInfo.signature = signatureInfo.getBody();
-                    if (LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest) != null) {
-                        throw new IllegalStateException("Unknown content at the end of the file");
-                    }
+                    if (signatureInfo != null) {
+                        logInfo.updateLastRecord(signatureInfo);
+                        listener.recordAdded(signatureInfo);
+                        checkRecordType(signatureInfo, RecordType.LOG_FILE_SIGNATURE);
+                        logInfo.signature = signatureInfo.getBody();
+                        if (LogReaderRecord.read(raf, logFileHeaderInfo.accumulativeDigest) != null) {
+                            //TODO throw or log
+                            throw new IllegalStateException("Unknown content at the end of the file");
+                        }
 
-                    if (!Arrays.equals(logInfo.accumulatedHash, logFileHeaderInfo.accumulativeDigest.getAccumulativeHash())) {
-                        throw new IllegalStateException("The calculated accumulative hash was different from the accumulative hash record");
-                    }
+                        if (!Arrays.equals(logInfo.accumulatedHash, logFileHeaderInfo.accumulativeDigest.getAccumulativeHash())) {
+                            //TODO throw or log
+                            throw new IllegalStateException("The calculated accumulative hash was different from the accumulative hash record");
+                        }
 
-                    byte[] calculatedSignature;
-                    try {
-                        Signature signature = Signature.getInstance(keyManager.getSigningAlgorithmName());
-                        signature.initSign(keyManager.getSigningPrivateKey());
-                        signature.update(logFileHeaderInfo.accumulativeDigest.getAccumulativeHash());
-                        calculatedSignature = signature.sign();
-                    } catch(Exception e) {
-                        throw new IllegalStateException("Could not calculate signature", e);
+                        byte[] calculatedSignature;
+                        try {
+                            Signature signature = Signature.getInstance(keyManager.getSigningAlgorithmName());
+                            signature.initSign(keyManager.getSigningPrivateKey());
+                            signature.update(logFileHeaderInfo.accumulativeDigest.getAccumulativeHash());
+                            calculatedSignature = signature.sign();
+                        } catch(Exception e) {
+                            //TODO throw or log
+                            throw new IllegalStateException("Could not calculate signature", e);
+                        }
+                        if (!Arrays.equals(calculatedSignature, logInfo.signature)) {
+                            //TODO throw or log
+                            throw new IllegalStateException("Signature differs");
+                        }
                     }
-                    if (!Arrays.equals(calculatedSignature, logInfo.signature)) {
-                        throw new IllegalStateException("Signature differs");
-                    }
-                    logInfo.lastSequenceNumber = signatureInfo.getSequenceNumber();
 
                     return logInfo;
                 }
@@ -236,6 +248,7 @@ class LogReader {
         private byte[] accumulatedHash;
         private byte[] signature;
         private int lastSequenceNumber;
+        private int lastRecordLength;
 
         LogInfo(File logFile, LogFileHeaderInfo logFileHeaderInfo){
             this.logFile = logFile;
@@ -250,12 +263,25 @@ class LogReader {
             return accumulatedHash;
         }
 
-        public int getLastSequenceNumber() {
+        int getLastSequenceNumber() {
             return lastSequenceNumber;
         }
 
-        public File getFileName() {
+        File getLogFile() {
             return logFile;
+        }
+
+        AccumulativeDigest getAccumulativeDigest() {
+            return logFileHeaderInfo.accumulativeDigest;
+        }
+
+        int getLastRecordLength() {
+            return lastRecordLength;
+        }
+
+        void updateLastRecord(LogReaderRecord record) {
+            this.lastSequenceNumber = record.getSequenceNumber();
+            this.lastRecordLength = record.getRecordLength();
         }
     }
 

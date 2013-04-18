@@ -64,15 +64,64 @@ class LogWriter implements Runnable {
         this.accumulativeDigest = AccumulativeDigest.createForWriter(keyManager.getHashAlgorithm(), secureRandomBytes);
     }
 
+    private LogWriter(KeyManager keyManager, File logFile, TrustedLocation trustedLocation, AccumulativeDigest accumulativeDigest, int sequenceNumber, int lastRecordLength, RandomAccessFile raf) {
+        this.keyManager = keyManager;
+        this.currentLogFile = logFile;
+        this.trustedLocation = trustedLocation;
+        this.accumulativeDigest = accumulativeDigest;
+        this.currentSequenceNumber = currentSequenceNumber;
+        this.lastRecordLength = lastRecordLength;
+        this.currentRandomAccessFile = raf;
+        logFileNameUtil = null;
+        this.recordQueue = null;
+    }
+
     static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo) {
         LogWriter writer = new LogWriter(keyManager, logFileDir, recordQueue, trustedLocation);
         writer.createNewLogFile(lastLogInfo);
         return writer;
     }
 
+    static FixingLogWriter createForFixing(KeyManager keyManager, File logFile, TrustedLocation trustedLocation, AccumulativeDigest accumulativeDigest, int sequenceNumber, int lastRecordLength) throws IOException {
+        RandomAccessFile raf = new RandomAccessFile(logFile, "rw");
+        try {
+            raf.seek(raf.getFilePointer() + raf.length());
+        } catch(IOException e) {
+            IoUtils.safeClose(raf);
+            throw e;
+        } catch (Throwable t) {
+            IoUtils.safeClose(raf);
+            throw new RuntimeException(t);
+        }
+        LogWriter logWriter = new LogWriter(keyManager, logFile, trustedLocation, accumulativeDigest, sequenceNumber, lastRecordLength, raf);
+        return logWriter.createFixingLogWriter();
+    }
+
+    private FixingLogWriter createFixingLogWriter() {
+        return new FixingLogWriterImpl();
+    }
+
+    void writeMissingSignatureRecordAndCloseWriter() {
+        try {
+            logMessage("The signature was missing. Adding it through an audit".getBytes(), RecordType.AUDITOR_NOTIFICATION, EncryptionType.NONE);
+            writeSignature(RecordType.LOG_FILE_SIGNATURE);
+        } finally {
+            IoUtils.safeClose(currentRandomAccessFile);
+        }
+    }
+
+    void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter() {
+        try {
+            logMessage("The accumulated hash and signature were missing. Adding them through an audit".getBytes(), RecordType.AUDITOR_NOTIFICATION, EncryptionType.NONE);
+            logMessage(accumulativeDigest.getAccumulativeHash(), RecordType.ACCUMULATED_HASH, EncryptionType.NONE);
+            writeSignature(RecordType.LOG_FILE_SIGNATURE);
+        } finally {
+            IoUtils.safeClose(currentRandomAccessFile);
+        }
+    }
+
     private File createNewLogFile(LogInfo lastLogInfo) {
         logFile = logFileNameUtil.generateNewLogFileName();
-        System.out.println("-------> NEW FILE " + logFile);
         accumulativeDigest.resetForNewFile(logFile);
         currentSequenceNumber = 0;
         currentLogFile = logFile;
@@ -97,6 +146,9 @@ class LogWriter implements Runnable {
             final SecureRandom random = SecureRandom.getInstance("SHA1PRNG", "SUN");
             random.nextBytes(secureRandomBytes);
         } catch (Exception e) {
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException)e;
+            }
             throw new RuntimeException(e);
         }
 
@@ -178,6 +230,9 @@ class LogWriter implements Runnable {
                 encryptedMessage = cipher.doFinal(message);
 
             } catch (Exception e) {
+                if (e instanceof RuntimeException) {
+                    throw (RuntimeException)e;
+                }
                 throw new RuntimeException(e);
             }
             final int recordLength = IoUtils.HEADER_LENGTH + encryptedMessage.length + keyManager.getHashAlgorithm().getHashLength();
@@ -197,6 +252,9 @@ class LogWriter implements Runnable {
                 byte[] digest = accumulativeDigest.digestRecord(recordType, header, encryptedMessage);
                 writeLogRecord(header, encryptedMessage, digest);
             } catch (Exception e) {
+                if (e instanceof RuntimeException) {
+                    throw (RuntimeException)e;
+                }
                 throw new RuntimeException(e);
             }
             lastRecordLength = recordLength;
@@ -212,32 +270,36 @@ class LogWriter implements Runnable {
         }
     }
 
-    private void writeLogRecord(byte[] header, byte[] message, byte[] hash) {
+    private void writeLogRecord(byte[] header, byte[] message, byte[] digest) {
         try {
-            //System.out.println(header.length  + " : " + Arrays.toString(header));
-            //System.out.println(message.length  + " : " + Arrays.toString(message));
-            //System.out.println(hash.length  + " : " + Arrays.toString(hash));
-
-            byte[] record = new byte[header.length + message.length + hash.length];
+            //Write the log record
+            byte[] record = new byte[header.length + message.length + digest.length];
             System.arraycopy(header, 0, record, 0, header.length);
             System.arraycopy(message, 0, record, header.length, message.length);
-            System.arraycopy(hash, 0, record, header.length + message.length, hash.length);
-
+            System.arraycopy(digest, 0, record, header.length + message.length, digest.length);
             currentRandomAccessFile.write(record);
-            trustedLocation.write(logFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
+
+            //Write the trusted location
+            trustedLocation.write(currentLogFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
     private void writeSignature(RecordType type) {
+        logMessage(createSignature(keyManager, accumulativeDigest.getAccumulativeHash()), type, EncryptionType.NONE);
+    }
+
+    private static byte[] createSignature(KeyManager keyManager, byte[] accumulativeHash) {
         try {
             Signature signature = Signature.getInstance(keyManager.getSigningAlgorithmName());
             signature.initSign(keyManager.getSigningPrivateKey());
-            signature.update(accumulativeDigest.getAccumulativeHash());
-            byte[] finalSignature = signature.sign();
-            logMessage(finalSignature, type, EncryptionType.NONE);
+            signature.update(accumulativeHash);
+            return signature.sign();
         } catch (Exception e) {
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException)e;
+            }
             throw new RuntimeException(e);
         }
     }
@@ -266,6 +328,7 @@ class LogWriter implements Runnable {
                 doneThread.set(true);
                 writeSignature(RecordType.LOG_FILE_SIGNATURE);
                 trustedLocation.write(logFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
+                IoUtils.safeClose(currentRandomAccessFile);
             }
         };
         return new LogWriterRecord(null, RecordType.ACCUMULATED_HASH, callback) {
@@ -279,8 +342,34 @@ class LogWriter implements Runnable {
         try {
             doneLatch.await();
         } catch (InterruptedException e) {
-            //TODO handle this properly
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
+        }
+    }
+
+    interface FixingLogWriter {
+        void writeMissingSignatureRecordAndCloseWriter();
+        void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter();
+    }
+
+    class FixingLogWriterImpl implements FixingLogWriter {
+        public void writeMissingSignatureRecordAndCloseWriter() {
+            //TODO - an AUDITOR_NOTIFICATION mentioning we have fixed this?
+            try {
+                writeSignature(RecordType.LOG_FILE_SIGNATURE);
+            } finally {
+                IoUtils.safeClose(currentRandomAccessFile);
+            }
+        }
+
+        public void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter() {
+            //TODO - an AUDITOR_NOTIFICATION mentioning we have fixed this?
+            try {
+                logMessage(accumulativeDigest.getAccumulativeHash(), RecordType.ACCUMULATED_HASH, EncryptionType.NONE);
+                writeSignature(RecordType.LOG_FILE_SIGNATURE);
+            } finally {
+                IoUtils.safeClose(currentRandomAccessFile);
+            }
         }
     }
 }

@@ -23,6 +23,8 @@ package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
 
+import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
+
 /**
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
@@ -39,7 +41,9 @@ public interface SecureLoggerBuilder {
 
     SecureLoggerBuilder setTrustedLocation(File file);
 
-    SecureLogger buildLogger() throws KeyStoreInitializationException;
+    SecureLoggerBuilder addRepairAction(RecoverAction repairAction);
+
+    SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException;
 
     interface SigningKeyPairBuilder {
         SigningKeyPairBuilder setPath(File location);

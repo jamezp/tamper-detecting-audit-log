@@ -22,9 +22,12 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
+import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
 
 class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
 
@@ -33,6 +36,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     private KeyManager.ViewingCertificateInfo viewingStore;
     private File logFileDir;
     private File trustedLocationFile;
+    private Set<RecoverAction> repairActions = new HashSet<RecoverAction>();
 
     @Override
     public EncryptingKeyPairBuilder encryptingStoreBuilder() {
@@ -63,16 +67,27 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     }
 
     @Override
-    public SecureLogger buildLogger() throws KeyStoreInitializationException {
-        KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
-        TrustedLocation trustedLocation = TrustedLocation.create(keyManager, logFileDir, trustedLocationFile);
-        LogInfo lastLogInfo = null;
-        if (trustedLocation.getCurrentInspectionLogFile() != null) {
-            LogReader reader = new LogReader(keyManager, trustedLocation.getCurrentInspectionLogFile());
-            lastLogInfo = reader.checkLogFile();
-            trustedLocation.checkLastLogRecord(lastLogInfo);
+    public SecureLoggerBuilder addRepairAction(RecoverAction repairAction) {
+        repairActions.add(repairAction);
+        return this;
+    }
 
-        }
+    @Override
+    public SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException {
+        RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
+        KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
+        TrustedLocation trustedLocation;
+        LogInfo lastLogInfo;
+        do {
+            trustedLocation = TrustedLocation.create(recoverableContext, keyManager, logFileDir, trustedLocationFile);
+            lastLogInfo = null;
+            if (trustedLocation.getCurrentInspectionLogFile() != null) {
+                recoverableContext.resetRecheck();
+                LogReader reader = new LogReader(keyManager, trustedLocation.getCurrentInspectionLogFile());
+                lastLogInfo = reader.checkLogFile();
+                trustedLocation.checkLastLogRecord(recoverableContext, lastLogInfo);
+            }
+        } while (recoverableContext.isRecheck());
         SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogWriterRecord>(), trustedLocation, lastLogInfo);
         return secureLogger;
     }
