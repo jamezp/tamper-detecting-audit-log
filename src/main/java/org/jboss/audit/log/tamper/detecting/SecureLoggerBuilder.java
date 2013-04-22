@@ -22,6 +22,8 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
+import java.io.OutputStream;
+import java.util.List;
 
 import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
 
@@ -43,7 +45,11 @@ public interface SecureLoggerBuilder {
 
     SecureLoggerBuilder addRepairAction(RecoverAction repairAction);
 
-    SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException;
+    SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException, ValidationException;
+
+    List<File> listLogFiles();
+
+    void verifyLog(OutputStream outputStream, File file) throws KeyStoreInitializationException;
 
     interface SigningKeyPairBuilder {
         SigningKeyPairBuilder setPath(File location);

@@ -95,14 +95,14 @@ public class LogReaderRecord {
         }
     }
 
-    static LogReaderRecord read(RandomAccessFile raf, AccumulativeDigest accumulativeDigest) {
+    static LogReaderRecord read(RandomAccessFile raf, HashAlgorithm hashAlgorithm) {
         final byte[] header = readLogRecordHeader(raf);
         if (header == null) {
             return null;
         }
         final int recordLength = getRecordLength(header);
-        final byte[] body = readRecordBody(raf, 0, recordLength - accumulativeDigest.getHashAlgorithm().getHashLength() - IoUtils.HEADER_LENGTH);
-        final byte[] hash = readRecordHash(raf, accumulativeDigest.getHashAlgorithm());
+        final byte[] body = readRecordBody(raf, 0, recordLength - hashAlgorithm.getHashLength() - IoUtils.HEADER_LENGTH);
+        final byte[] hash = readRecordHash(raf, hashAlgorithm);
 
         LogReaderRecord logRecord = new LogReaderRecord(header, body, hash);
         return logRecord;

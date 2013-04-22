@@ -24,7 +24,6 @@ package org.jboss.audit.log.tamper.detecting;
 import java.io.File;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
 
 /**
  *
@@ -80,14 +79,6 @@ class AccumulativeDigest {
             accumulativeDigest.update(digest);
         }
         return digest;
-    }
-
-    byte[] digestRecordAndCheck(RecordType recordType, byte[] header, byte[] body, byte[] hash) {
-        byte[] ourHash = digestRecord(recordType, header, body);
-        if (!Arrays.equals(hash, ourHash)) {
-            throw new IllegalStateException("Bad hash for record");
-        }
-        return hash;
     }
 
     byte[] getAccumulativeHash() {

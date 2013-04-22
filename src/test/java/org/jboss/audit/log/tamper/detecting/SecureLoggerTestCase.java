@@ -348,7 +348,7 @@ public class SecureLoggerTestCase {
         Assert.assertTrue(trusted.exists());
     }
 
-    private SecureLogger createLogger(RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException {
+    private SecureLogger createLogger(RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
         SecureLoggerBuilder builder = SecureLoggerBuilder.Factory.createBuilder()
                 .signingStoreBuilder()
                     .setPath(getResourceFile("test-sign.keystore"))
