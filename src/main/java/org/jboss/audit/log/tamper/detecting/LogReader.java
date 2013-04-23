@@ -59,6 +59,13 @@ class LogReader {
         return readLogFile(new VerifyingLogFileRecordListener(logFile, keyManager.getEncryptingPrivateKey(), keyManager.getViewingPrivateKey(), keyManager.getSigningAlgorithmName(), keyManager.getSigningPrivateKey(), out, bodyOutputter));
     }
 
+    public void viewLogFile(PrivateKey viewingPrivateKey, OutputStream out, LogRecordBodyOutputter bodyOutputter) {
+        try {
+            readLogFile(new ViewingLogFileRecordListener(logFile, viewingPrivateKey, out, bodyOutputter));
+        } catch (ValidationException e) {
+            throw new IllegalStateException("An error happened trying to read the log file");
+        }
+    }
 
     private LogInfo readLogFile(LogReaderRecordListener listener) throws ValidationException {
         final RandomAccessFile raf;
@@ -316,6 +323,46 @@ class LogReader {
             }
         }
     }
+
+    private class ViewingLogFileRecordListener extends LogReaderRecordListener {
+        private final LogRecordBodyOutputter bodyOutputter;
+        private final OutputStream out;
+        public ViewingLogFileRecordListener(File logFile, PrivateKey viewingPrivateKey, OutputStream out, LogRecordBodyOutputter bodyOutputter) {
+            super(logFile, null, viewingPrivateKey, null, null);
+            this.bodyOutputter = bodyOutputter;
+            this.out = out;
+        }
+
+        @Override
+        protected void handleRecordAdded(LogReaderRecord record, byte[] calculatedHashForRecord) {
+            if (record.getRecordType() == RecordType.CLIENT_LOG_DATA) {
+                try {
+                    bodyOutputter.outputLogRecordBody(out, record.getBody());
+                    out.write("\n".getBytes());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+
+        @Override
+        protected void logOrThrowException(String message) throws ValidationException {
+        }
+
+        @Override
+        protected void logOrThrowException(String message, Throwable cause) throws ValidationException {
+        }
+
+        @Override
+        protected void unrecoverableError(Throwable t) throws ValidationException {
+        }
+
+        @Override
+        protected void finalizeErrors() {
+        }
+
+    }
+
 
     private static class ErrorInfo {
         private final String message;

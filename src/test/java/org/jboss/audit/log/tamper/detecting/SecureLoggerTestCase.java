@@ -49,6 +49,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
+ * Logging and verifying log files must be done on the server
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
@@ -382,8 +383,28 @@ public class SecureLoggerTestCase {
         file.delete();
 
         createLogBuilder().verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
-
     }
+
+    @Test
+    public void testViewLog() throws Exception {
+        //The key thing here is that the viewer cannot verify the log file but it only needs the viewing p12 private key
+        //matching the viewing certificate
+        SecureLogger logger = null;
+        try {
+            logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
+            logger.logMessage("Hello".getBytes());
+            logger.logMessage("Hello again".getBytes());
+        } finally {
+            if (logger != null) {
+                logger.closeLog();
+            }
+        }
+
+        LogViewer logViewer = LogViewer.create(getResourceFile("viewing-key.p12"), "changeit5c", "changeit6", testLogDir);
+        logViewer.viewLogFile(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null);
+    }
+
+
     private void overrideTestDirAndTrusted(String logDir) throws IOException, URISyntaxException {
         File fromDir = new File("src");
         fromDir = new File(fromDir, "test");
@@ -440,7 +461,7 @@ public class SecureLoggerTestCase {
                     .setStorePassword("changeit3")
                     .setKeyPassword("changeit4")
                     .done()
-                .setViewingCertificatePath(getResourceFile("test-viewing.cer"))
+                .setViewingCertificatePath(getResourceFile("viewing-cert.cer"))
                 .setLogFileRoot(testLogDir)
                 .setTrustedLocation(trusted);
     }
@@ -460,7 +481,7 @@ public class SecureLoggerTestCase {
     }
 
     private ViewingCertificateInfo getViewingCertificate() throws IOException, URISyntaxException, KeyStoreInitializationException {
-        File file = getResourceFile("test-viewing.cer");
+        File file = getResourceFile("viewing-cert.cer");
         ViewingCertificateInfo wrapper = ViewingCertificateInfo.create(file);
         Assert.assertNotNull(wrapper);
         return wrapper;

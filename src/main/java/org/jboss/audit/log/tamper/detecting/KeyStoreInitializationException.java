@@ -29,6 +29,10 @@ public class KeyStoreInitializationException extends Exception {
 
     private static final long serialVersionUID = 1L;
 
+    public KeyStoreInitializationException(String message) {
+        super(message);
+    }
+
     public KeyStoreInitializationException(Throwable cause) {
         super(cause);
     }
