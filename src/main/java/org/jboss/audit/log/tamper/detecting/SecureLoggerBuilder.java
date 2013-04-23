@@ -81,6 +81,13 @@ public interface SecureLoggerBuilder {
     SecureLoggerBuilder addRecoverAction(RecoverAction recoverAction);
 
     /**
+     * If called the logger will encrypt the user log messages
+     *
+     * @return this builder
+     */
+    SecureLoggerBuilder setEncryptLogMessages();
+
+    /**
      * Builds the logger
      *
      * @return a secure logger

@@ -333,7 +333,7 @@ public class SecureLoggerTestCase {
 
         //File file = new LogFileNameUtil().getPreviousLogFilename(null);
 
-        SecureLoggerBuilder builder = createLogBuilder();
+        SecureLoggerBuilder builder = createLogBuilder(false);
         builder.verifyLogFile(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null);
     }
 
@@ -350,7 +350,7 @@ public class SecureLoggerTestCase {
             }
         }
 
-        createLogBuilder().verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
+        createLogBuilder(false).verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
 
         try {
             Thread.sleep(1000); //TODO Sleep since the naming stuff needs 1s difference
@@ -363,7 +363,7 @@ public class SecureLoggerTestCase {
             }
         }
 
-        createLogBuilder().verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
+        createLogBuilder(false).verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
 
         try {
             Thread.sleep(1000); //TODO Sleep since the naming stuff needs 1s difference
@@ -382,7 +382,7 @@ public class SecureLoggerTestCase {
         File file = util.getPreviousLogFilename(currentFile.getName());
         file.delete();
 
-        createLogBuilder().verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
+        createLogBuilder(false).verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
     }
 
     @Test
@@ -392,6 +392,25 @@ public class SecureLoggerTestCase {
         SecureLogger logger = null;
         try {
             logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
+            logger.logMessage("Hello".getBytes());
+            logger.logMessage("Hello again".getBytes());
+        } finally {
+            if (logger != null) {
+                logger.closeLog();
+            }
+        }
+
+        LogViewer logViewer = LogViewer.create(getResourceFile("viewing-key.p12"), "changeit5c", "changeit6", testLogDir);
+        logViewer.viewLogFile(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null);
+    }
+
+    @Test
+    public void testViewLogEncrypted() throws Exception {
+        //The key thing here is that the viewer cannot verify the log file but it only needs the viewing p12 private key
+        //matching the viewing certificate
+        SecureLoggerBuilder builder = createLogBuilder(true, RecoverAction.CREATE_TRUSTED_LOCATION);
+        SecureLogger logger = builder.buildLogger();
+        try {
             logger.logMessage("Hello".getBytes());
             logger.logMessage("Hello again".getBytes());
         } finally {
@@ -438,16 +457,12 @@ public class SecureLoggerTestCase {
     }
 
     private SecureLogger createLogger(RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
-        SecureLoggerBuilder builder = createLogBuilder();
-
-        for (RecoverAction repairAction : recoverActions) {
-            builder.addRecoverAction(repairAction);
-        }
+        SecureLoggerBuilder builder = createLogBuilder(false, recoverActions);
         return builder.buildLogger();
     }
 
-    private SecureLoggerBuilder createLogBuilder() throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
-        return SecureLoggerBuilder.Factory.createBuilder()
+    private SecureLoggerBuilder createLogBuilder(boolean encrypted, RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
+        SecureLoggerBuilder builder = SecureLoggerBuilder.Factory.createBuilder()
                 .signingStoreBuilder()
                     .setPath(getResourceFile("test-sign.keystore"))
                     .setKeyName("audit-sign")
@@ -464,6 +479,16 @@ public class SecureLoggerTestCase {
                 .setViewingCertificatePath(getResourceFile("viewing-cert.cer"))
                 .setLogFileRoot(testLogDir)
                 .setTrustedLocation(trusted);
+
+        if (encrypted) {
+            builder.setEncryptLogMessages();
+        }
+
+
+        for (RecoverAction repairAction : recoverActions) {
+            builder.addRecoverAction(repairAction);
+        }
+        return builder;
     }
 
     private SigningKeyPairInfo getSigningKeyPair() throws IOException, URISyntaxException, KeyStoreInitializationException {

@@ -42,6 +42,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     private File logFileDir;
     private File trustedLocationFile;
     private Set<RecoverAction> repairActions = new HashSet<RecoverAction>();
+    private boolean encryptLogMessages;
 
     @Override
     public EncryptingKeyPairBuilder encryptingStoreBuilder() {
@@ -78,6 +79,13 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     }
 
     @Override
+    public SecureLoggerBuilder setEncryptLogMessages() {
+        encryptLogMessages = true;
+        return this;
+    }
+
+
+    @Override
     public SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException, ValidationException {
         RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
         KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
@@ -93,7 +101,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
                 trustedLocation.checkLastLogRecord(recoverableContext, lastLogInfo);
             }
         } while (recoverableContext.isRecheck());
-        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogWriterRecord>(), trustedLocation, lastLogInfo);
+        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogWriterRecord>(), trustedLocation, lastLogInfo, encryptLogMessages);
         return secureLogger;
     }
 

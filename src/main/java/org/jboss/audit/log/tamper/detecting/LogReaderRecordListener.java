@@ -30,6 +30,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.util.Arrays;
 
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -184,6 +185,17 @@ abstract class LogReaderRecordListener {
         return new SecretKeySpec(rawKey, "AES");
     }
 
+    byte[] decryptSymmetricLogMessage(LogReaderRecord record) throws ValidationException {
+        try{
+                Cipher cipher = Cipher.getInstance("AES");
+                cipher.init(Cipher.DECRYPT_MODE, secretKey);
+                return cipher.doFinal(record.getBody());
+        } catch (Exception e) {
+            logOrThrowException("Could not decrypt log message", e);
+            return null;
+        }
+    }
+
     final void recordAdded(LogReaderRecord record) throws ValidationException {
         final RecordType recordType = record.getRecordType();
         if (signatureFromRecord != null) {
@@ -193,7 +205,7 @@ abstract class LogReaderRecordListener {
                   logOrThrowException("The type of the record is " + RecordType.ACCUMULATED_HASH + " which already has been seen");
               }
               accumulatedHashFromRecord = record.getBody();
-              if (!Arrays.equals(accumulativeDigest.getAccumulativeHash(), accumulatedHashFromRecord)) {
+              if (maintainHash && !Arrays.equals(accumulativeDigest.getAccumulativeHash(), accumulatedHashFromRecord)) {
                   logOrThrowException("The calculated accumulative hash was different from the accumulative hash record");
               }
 
@@ -203,17 +215,19 @@ abstract class LogReaderRecordListener {
             }
             signatureFromRecord = record.getBody();
 
-            byte[] calculatedSignature = null;
-            try {
-                Signature signature = Signature.getInstance(signingAlgorithmName);
-                signature.initSign(signingPrivateKey);
-                signature.update(accumulativeDigest.getAccumulativeHash());
-                calculatedSignature = signature.sign();
-            } catch(Exception e) {
-                logOrThrowException("Could not calculate signature for checking", e);
-            }
-            if (!Arrays.equals(calculatedSignature, signatureFromRecord)) {
-                logOrThrowException("The signature calculated from the " + RecordType.ACCUMULATED_HASH + " is different from the one from the " + RecordType.LOG_FILE_SIGNATURE + " record.");
+            if (maintainHash) {
+                byte[] calculatedSignature = null;
+                try {
+                    Signature signature = Signature.getInstance(signingAlgorithmName);
+                    signature.initSign(signingPrivateKey);
+                    signature.update(accumulativeDigest.getAccumulativeHash());
+                    calculatedSignature = signature.sign();
+                } catch(Exception e) {
+                    logOrThrowException("Could not calculate signature for checking", e);
+                }
+                if (!Arrays.equals(calculatedSignature, signatureFromRecord)) {
+                    logOrThrowException("The signature calculated from the " + RecordType.ACCUMULATED_HASH + " is different from the one from the " + RecordType.LOG_FILE_SIGNATURE + " record.");
+                }
             }
         } else if (recordType == RecordType.CLIENT_LOG_DATA || recordType == RecordType.HEARTBEAT) {
             if (accumulatedHashFromRecord != null) {
@@ -228,7 +242,7 @@ abstract class LogReaderRecordListener {
         hashAndHandleRecordAdded(record);
     }
 
-    private void hashAndHandleRecordAdded(LogReaderRecord record) {
+    private void hashAndHandleRecordAdded(LogReaderRecord record) throws ValidationException {
         byte[] hash = null;
         if (maintainHash) {
             hash = accumulativeDigest.digestRecord(record.getRecordType(), record.getHeader(), record.getBody());
@@ -248,7 +262,7 @@ abstract class LogReaderRecordListener {
     }
 
 
-    protected abstract void handleRecordAdded(LogReaderRecord record, byte[] calculatedHashForRecord);
+    protected abstract void handleRecordAdded(LogReaderRecord record, byte[] calculatedHashForRecord) throws ValidationException ;
 
     protected abstract void logOrThrowException(String message) throws ValidationException;
 

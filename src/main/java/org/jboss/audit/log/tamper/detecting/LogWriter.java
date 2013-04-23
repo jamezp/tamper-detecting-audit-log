@@ -47,6 +47,7 @@ class LogWriter implements Runnable {
     private final byte[] secureRandomBytes = new byte[IoUtils.SECURE_RANDOM_BYTES_LENGTH];
     private final TrustedLocation trustedLocation;
     private final AccumulativeDigest accumulativeDigest;
+    private final boolean encryptLogMessages;
     private final AtomicBoolean doneThread = new AtomicBoolean(false);
     private final CountDownLatch doneLatch = new CountDownLatch(1);
     private volatile File logFile;
@@ -56,12 +57,13 @@ class LogWriter implements Runnable {
     private volatile SecretKey symmetricKeyInLog = null;
     private volatile int lastRecordLength;
 
-    private LogWriter(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation) {
+    private LogWriter(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, boolean encryptLogMessages) {
         this.keyManager = keyManager;
         this.recordQueue = recordQueue;
         logFileNameUtil = new LogFileNameUtil(logFileDir);
         this.trustedLocation = trustedLocation;
         this.accumulativeDigest = AccumulativeDigest.createForWriter(keyManager.getHashAlgorithm(), secureRandomBytes);
+        this.encryptLogMessages = encryptLogMessages;
     }
 
     private LogWriter(KeyManager keyManager, File logFile, TrustedLocation trustedLocation, AccumulativeDigest accumulativeDigest, int sequenceNumber, int lastRecordLength, RandomAccessFile raf) {
@@ -74,10 +76,11 @@ class LogWriter implements Runnable {
         this.currentRandomAccessFile = raf;
         logFileNameUtil = null;
         this.recordQueue = null;
+        this.encryptLogMessages = false;
     }
 
-    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo) {
-        LogWriter writer = new LogWriter(keyManager, logFileDir, recordQueue, trustedLocation);
+    static LogWriter create(KeyManager keyManager, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo, boolean encryptLogMessages) {
+        LogWriter writer = new LogWriter(keyManager, logFileDir, recordQueue, trustedLocation, encryptLogMessages);
         writer.createNewLogFile(lastLogInfo);
         return writer;
     }
@@ -196,12 +199,13 @@ class LogWriter implements Runnable {
 
     @Override
     public void run() {
+        EncryptionType encryptionType = encryptLogMessages ? EncryptionType.SYMMETRIC : EncryptionType.NONE;
         try {
             while (!doneThread.get()) {
                 try {
                     LogWriterRecord logRecord = recordQueue.poll(1, TimeUnit.SECONDS);
                     if (logRecord != null) {
-                        logMessage(logRecord.getData(), logRecord.getType(), EncryptionType.NONE);
+                        logMessage(logRecord.getData(), logRecord.getType(), encryptionType);
                         logRecord.logged();
                     } else {
                         logMessage(new byte[0], RecordType.HEARTBEAT, EncryptionType.NONE);

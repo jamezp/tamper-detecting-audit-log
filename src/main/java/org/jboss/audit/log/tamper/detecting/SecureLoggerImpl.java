@@ -41,8 +41,8 @@ class SecureLoggerImpl implements SecureLogger {
         this.logWriter = logWriter;
     }
 
-    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo) {
-        LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue, trustedLocation, lastLogInfo);
+    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo, boolean encryptLogMessages) {
+        LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue, trustedLocation, lastLogInfo, encryptLogMessages);
         SecureLoggerImpl logger = new SecureLoggerImpl(logFileDir, recordQueue, writer);
         logger.initialize();
         return logger;

@@ -63,6 +63,7 @@ class LogReader {
         try {
             readLogFile(new ViewingLogFileRecordListener(logFile, viewingPrivateKey, out, bodyOutputter));
         } catch (ValidationException e) {
+            e.printStackTrace();
             throw new IllegalStateException("An error happened trying to read the log file");
         }
     }
@@ -334,10 +335,14 @@ class LogReader {
         }
 
         @Override
-        protected void handleRecordAdded(LogReaderRecord record, byte[] calculatedHashForRecord) {
+        protected void handleRecordAdded(LogReaderRecord record, byte[] calculatedHashForRecord) throws ValidationException {
             if (record.getRecordType() == RecordType.CLIENT_LOG_DATA) {
+                byte[] body = record.getBody();
+                if (record.getEncryptionType() == EncryptionType.SYMMETRIC) {
+                    body = decryptSymmetricLogMessage(record);
+                }
                 try {
-                    bodyOutputter.outputLogRecordBody(out, record.getBody());
+                    bodyOutputter.outputLogRecordBody(out, body);
                     out.write("\n".getBytes());
                 } catch (IOException e) {
                     throw new RuntimeException(e);
@@ -347,14 +352,17 @@ class LogReader {
 
         @Override
         protected void logOrThrowException(String message) throws ValidationException {
+            throw new ValidationException(message);
         }
 
         @Override
         protected void logOrThrowException(String message, Throwable cause) throws ValidationException {
+            throw new ValidationException(message, cause);
         }
 
         @Override
         protected void unrecoverableError(Throwable t) throws ValidationException {
+            throw new ValidationException("Unrecoverable error", t);
         }
 
         @Override
