@@ -110,6 +110,7 @@ public class SecureLoggerTestCase {
             Assert.fail();
         } catch (RecoverableException expected) {
         }
+
         SecureLogger logger = createLogger(RecoverAction.REBUILD_TRUSTED_LOCATION);
         logger.closeLog();
     }
@@ -266,7 +267,6 @@ public class SecureLoggerTestCase {
             logger = createLogger();
             Assert.fail("Should have failed");
         } catch (RecoverableException expected) {
-            expected.printStackTrace();
             Assert.assertTrue(expected.getCondition().getAllowedActions().contains(RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH));
         }
         logger = createLogger(RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH);
@@ -286,6 +286,7 @@ public class SecureLoggerTestCase {
         } catch (RecoverableException expected) {
             Assert.assertTrue(expected.getCondition().getAllowedActions().contains(RecoverAction.REPAIR_TRUSTED_LOCATION));
         }
+
         try {
             logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION);
             Assert.fail("Should have failed");
@@ -315,6 +316,31 @@ public class SecureLoggerTestCase {
 //        logger.closeLog();
 //
 //    }
+
+    @Test
+    public void testVerifyGoodLogFile() throws Exception {
+        SecureLogger logger = null;
+        try {
+            logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
+            logger.logMessage("Hello".getBytes());
+            logger.logMessage("Hello again".getBytes());
+        } finally {
+            if (logger != null) {
+                logger.closeLog();
+            }
+        }
+
+        //File file = new LogFileNameUtil().getPreviousLogFilename(null);
+
+        SecureLoggerBuilder builder = createLogBuilder();
+        builder.verifyLog(new OutputStream() {
+
+            @Override
+            public void write(int b) throws IOException {
+                System.out.write(b);
+            }
+        }, null, LogRecordBodyOutputter.RAW);
+    }
 
     private void overrideTestDirAndTrusted(String logDir) throws IOException, URISyntaxException {
         File fromDir = new File("src");
@@ -349,7 +375,16 @@ public class SecureLoggerTestCase {
     }
 
     private SecureLogger createLogger(RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
-        SecureLoggerBuilder builder = SecureLoggerBuilder.Factory.createBuilder()
+        SecureLoggerBuilder builder = createLogBuilder();
+
+        for (RecoverAction repairAction : recoverActions) {
+            builder.addRepairAction(repairAction);
+        }
+        return builder.buildLogger();
+    }
+
+    private SecureLoggerBuilder createLogBuilder() throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
+        return SecureLoggerBuilder.Factory.createBuilder()
                 .signingStoreBuilder()
                     .setPath(getResourceFile("test-sign.keystore"))
                     .setKeyName("audit-sign")
@@ -366,11 +401,6 @@ public class SecureLoggerTestCase {
                 .setViewingCertificatePath(getResourceFile("test-viewing.cer"))
                 .setLogFileRoot(testLogDir)
                 .setTrustedLocation(trusted);
-
-        for (RecoverAction repairAction : recoverActions) {
-            builder.addRepairAction(repairAction);
-        }
-        return builder.buildLogger();
     }
 
     private SigningKeyPairInfo getSigningKeyPair() throws IOException, URISyntaxException, KeyStoreInitializationException {
@@ -413,5 +443,15 @@ public class SecureLoggerTestCase {
         } else {
             file.delete();
         }
+    }
+
+    private static class SystemOutOutputStream extends OutputStream {
+
+        @Override
+        public void write(int b) throws IOException {
+            System.out.write(b);
+            System.out.flush();
+        }
+
     }
 }

@@ -150,11 +150,10 @@ class TrustedLocation {
         return 1;
     }
 
-    void checkLastLogRecord(final RecoverableErrorContext recoverableContext, final LogInfo lastLogInfo) throws RecoverableException {
+    void checkLastLogRecord(final RecoverableErrorContext recoverableContext, final LogInfo lastLogInfo) throws RecoverableException, ValidationException {
         if (currentInspectionLogFile != null && !inspectingPreviousLogFile) {
             if (lastLogInfo.getLastSequenceNumber() != lastSequenceNumber) {
-                if (lastLogInfo.getLastSequenceNumber() == lastSequenceNumber + 1
-                    /*&& (lastLogInfo.getAccumulatedHash() == null || lastLogInfo.getSignature() == null)*/) { //not sure the hash and sig checks are needed
+                if (lastLogInfo.getLastSequenceNumber() == lastSequenceNumber + 1) {
                     recoverableContext.possibleCrashBetweenWritingLogRecordAndUpdatingTrustedLocation(
                             lastLogInfo.getLogFile(),
                             lastLogInfo.getLastSequenceNumber(),
@@ -168,10 +167,10 @@ class TrustedLocation {
                             }));
                     return;
                 } else {
-                    throw new IllegalStateException("The sequence number in " + currentInspectionLogFile + " was " + lastLogInfo.getLastSequenceNumber() + " but the trusted location has this as " + this.lastSequenceNumber);
+                    throw new ValidationException("The sequence number in " + currentInspectionLogFile + " was " + lastLogInfo.getLastSequenceNumber() + " but the trusted location has this as " + this.lastSequenceNumber);
                 }
             } else if (lastLogInfo.getAccumulatedHash() != null && !Arrays.equals(lastLogInfo.getAccumulatedHash(), this.lastAccumulativeHash)) {
-                throw new IllegalStateException("The accumulated hash is different in " + currentInspectionLogFile + " and in the trusted location");
+                throw new ValidationException("The accumulated hash is different in " + currentInspectionLogFile + " and in the trusted location");
             }
 
             if (lastLogInfo.getAccumulatedHash() == null) {

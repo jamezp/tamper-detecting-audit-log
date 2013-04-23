@@ -22,6 +22,7 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -95,6 +96,56 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
         return secureLogger;
     }
 
+    @Override
+    public void verifyLog(OutputStream outputStream, File file, LogRecordBodyOutputter bodyOutputter) throws KeyStoreInitializationException {
+        if (file == null) {
+            file = new LogFileNameUtil(logFileDir).getPreviousLogFilename(null);
+            if (file == null) {
+                throw new IllegalStateException("Could not find any log files in " + logFileDir);
+            }
+        }
+        KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
+        LogReader reader = new LogReader(keyManager, file);
+        RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
+        TrustedLocation trustedLocation = null;
+        try {
+            do {
+                trustedLocation = TrustedLocation.create(recoverableContext, keyManager, logFileDir, trustedLocationFile);
+            } while (recoverableContext.isRecheck());
+        }catch (RecoverableException e) {
+            try {
+                outputStream.write(("\nError: " + e.getMessage()).getBytes());
+            } catch (IOException ie) {
+                ie.printStackTrace();
+            }
+        }
+
+        LogInfo logInfo = null;
+        try {
+            logInfo = reader.verifyLogFile(outputStream, bodyOutputter);
+        } catch (ValidationException e) {
+            //Should not happen
+            throw new IllegalStateException(e);
+        }
+
+        if (trustedLocation != null) {
+            try {
+                do {
+                    trustedLocation.checkLastLogRecord(recoverableContext, logInfo);
+                } while (recoverableContext.isRecheck());
+            } catch (RecoverableException e) {
+                try {
+                    outputStream.write(("\nError: " + e.getMessage()).getBytes());
+                } catch (IOException ie) {
+                    ie.printStackTrace();
+                }
+            } catch (ValidationException e) {
+                IoUtils.printStackTraceToOutputStream(e, outputStream);
+            }
+        }
+    }
+
+
 
     @Override
     public List<File> listLogFiles() {
@@ -111,25 +162,6 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
         }
         return files;
     }
-
-    @Override
-    public void verifyLog(OutputStream outputStream, File file) throws KeyStoreInitializationException {
-        if (file == null) {
-            file = new LogFileNameUtil(logFileDir).getPreviousLogFilename(null);
-            if (file == null) {
-                throw new IllegalStateException("The log directory is empty");
-            }
-        }
-        KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
-        LogReader reader = new LogReader(keyManager, logFileDir);
-        try {
-            reader.verifyLogFile(outputStream);
-        } catch (ValidationException e) {
-            //Should not happen
-            throw new IllegalStateException(e);
-        }
-    }
-
     private class KeyPairBuilderImpl implements SigningKeyPairBuilder, EncryptingKeyPairBuilder {
 
         private final KeyStoreType type;

@@ -97,7 +97,7 @@ class RecoverableErrorContext {
     void lastLogFileDoesNotHaveASignature(File lastLogFile, Map<RecoverAction, RecoverCallback<Void>> actionCallbacks) throws RecoverableException {
         throwOrRepair(
                 RecoverableErrorCondition.LAST_LOG_FILE_DOES_NOT_HAVE_A_SIGNATURE, null,
-                "The last log file " + lastLogFile + " does not have an accumulated hash at the end. The system might have crashed before being able to write this information",
+                "The last log file " + lastLogFile + " does not have a signature at the end. The system might have crashed before being able to write this information",
                 actionCallbacks);
         recheck = true;
     }

@@ -21,16 +21,21 @@
  */
 package org.jboss.audit.log.tamper.detecting;
 
+import java.io.IOException;
+import java.io.OutputStream;
+
 /**
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-public interface LogRecordBodyReader<T extends LogRecordBodyReader> {
+public interface LogRecordBodyOutputter {
 
-    T readBody(byte[] bytes);
+    void outputLogRecordBody(OutputStream out, byte[] body) throws IOException;
 
-
-    interface LogRecordBody {
-    }
-
+    public LogRecordBodyOutputter RAW = new LogRecordBodyOutputter() {
+        @Override
+        public void outputLogRecordBody(OutputStream out, byte[] body) throws IOException {
+            out.write(body);
+        }
+    };
 }

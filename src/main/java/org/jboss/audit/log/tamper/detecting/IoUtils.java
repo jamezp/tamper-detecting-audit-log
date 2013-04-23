@@ -22,6 +22,8 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.Closeable;
+import java.io.OutputStream;
+import java.io.PrintWriter;
 
 /**
  *
@@ -36,6 +38,15 @@ public class IoUtils {
         try {
             closeable.close();
         } catch (Exception ignore) {
+        }
+    }
+
+    static void printStackTraceToOutputStream(Throwable t, OutputStream out) {
+        PrintWriter writer = new PrintWriter(out);
+        try {
+            t.printStackTrace(writer);
+        } finally {
+            writer.flush();
         }
     }
 

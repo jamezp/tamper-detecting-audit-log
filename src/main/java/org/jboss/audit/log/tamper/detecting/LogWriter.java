@@ -98,26 +98,28 @@ class LogWriter implements Runnable {
     }
 
     private FixingLogWriter createFixingLogWriter() {
-        return new FixingLogWriterImpl();
-    }
+        return new FixingLogWriter() {
+            public void writeMissingSignatureRecordAndCloseWriter() {
+                try {
+                    //TODO add this
+                    //logMessage("The signature was missing. Adding it through an audit".getBytes(), RecordType.AUDITOR_NOTIFICATION, EncryptionType.NONE);
+                    writeSignature(RecordType.LOG_FILE_SIGNATURE);
+                } finally {
+                    IoUtils.safeClose(currentRandomAccessFile);
+                }
+            }
 
-    void writeMissingSignatureRecordAndCloseWriter() {
-        try {
-            logMessage("The signature was missing. Adding it through an audit".getBytes(), RecordType.AUDITOR_NOTIFICATION, EncryptionType.NONE);
-            writeSignature(RecordType.LOG_FILE_SIGNATURE);
-        } finally {
-            IoUtils.safeClose(currentRandomAccessFile);
-        }
-    }
-
-    void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter() {
-        try {
-            logMessage("The accumulated hash and signature were missing. Adding them through an audit".getBytes(), RecordType.AUDITOR_NOTIFICATION, EncryptionType.NONE);
-            logMessage(accumulativeDigest.getAccumulativeHash(), RecordType.ACCUMULATED_HASH, EncryptionType.NONE);
-            writeSignature(RecordType.LOG_FILE_SIGNATURE);
-        } finally {
-            IoUtils.safeClose(currentRandomAccessFile);
-        }
+            public void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter() {
+                try {
+                    //TODO add this
+                    //logMessage("The accumulated hash and signature were missing. Adding them through an audit".getBytes(), RecordType.AUDITOR_NOTIFICATION, EncryptionType.NONE);
+                    logMessage(accumulativeDigest.getAccumulativeHash(), RecordType.ACCUMULATED_HASH, EncryptionType.NONE);
+                    writeSignature(RecordType.LOG_FILE_SIGNATURE);
+                } finally {
+                    IoUtils.safeClose(currentRandomAccessFile);
+                }
+            }
+        };
     }
 
     private File createNewLogFile(LogInfo lastLogInfo) {
@@ -350,26 +352,5 @@ class LogWriter implements Runnable {
     interface FixingLogWriter {
         void writeMissingSignatureRecordAndCloseWriter();
         void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter();
-    }
-
-    class FixingLogWriterImpl implements FixingLogWriter {
-        public void writeMissingSignatureRecordAndCloseWriter() {
-            //TODO - an AUDITOR_NOTIFICATION mentioning we have fixed this?
-            try {
-                writeSignature(RecordType.LOG_FILE_SIGNATURE);
-            } finally {
-                IoUtils.safeClose(currentRandomAccessFile);
-            }
-        }
-
-        public void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter() {
-            //TODO - an AUDITOR_NOTIFICATION mentioning we have fixed this?
-            try {
-                logMessage(accumulativeDigest.getAccumulativeHash(), RecordType.ACCUMULATED_HASH, EncryptionType.NONE);
-                writeSignature(RecordType.LOG_FILE_SIGNATURE);
-            } finally {
-                IoUtils.safeClose(currentRandomAccessFile);
-            }
-        }
     }
 }

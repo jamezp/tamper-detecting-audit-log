@@ -50,9 +50,12 @@ public class RecoverableException extends Exception {
         boolean first = true;
         for (RecoverAction action : condition.getAllowedActions()) {
             if (first) {
-                sb.append("\nAvailable actions are to:");
+                sb.append("\nAvailable actions are to: ");
+                first = false;
+            } else {
+                sb.append(", ");
             }
-            sb.append("\n\t" + action);
+            sb.append(action);
         }
         return sb.toString();
     }

@@ -49,7 +49,7 @@ public interface SecureLoggerBuilder {
 
     List<File> listLogFiles();
 
-    void verifyLog(OutputStream outputStream, File file) throws KeyStoreInitializationException;
+    void verifyLog(OutputStream outputStream, File file, LogRecordBodyOutputter bodyOutputter) throws KeyStoreInitializationException;
 
     interface SigningKeyPairBuilder {
         SigningKeyPairBuilder setPath(File location);

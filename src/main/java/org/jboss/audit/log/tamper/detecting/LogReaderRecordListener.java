@@ -22,10 +22,13 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.security.PrivateKey;
+import java.security.Signature;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
+import java.util.Arrays;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -37,31 +40,72 @@ import javax.crypto.spec.SecretKeySpec;
  */
 abstract class LogReaderRecordListener {
 
+    private final File logFile;
     private final PrivateKey encryptingPrivateKey;
     private final PrivateKey viewingPrivateKey;
+    private final String signingAlgorithmName;
+    private final PrivateKey signingPrivateKey;
+    private final boolean maintainHash;
+
+    //Info read
     private volatile AccumulativeDigest accumulativeDigest;
     private volatile SecretKey secretKey;
     private volatile Certificate signingCertificate;
     private volatile String lastFileName;
     private volatile byte[] lastFileHash;
     private volatile byte[] lastFileSignature;
+    private volatile byte[] accumulatedHashFromRecord;
+    private volatile byte[] signatureFromRecord;
+    private volatile int sequenceNumber;
+    private volatile int recordLength;
 
 
-    protected LogReaderRecordListener(PrivateKey encryptingPrivateKey, PrivateKey viewingPrivateKey) {
+
+    protected LogReaderRecordListener(File logFile, PrivateKey encryptingPrivateKey, PrivateKey viewingPrivateKey, String signingAlgorithmName, PrivateKey signingPrivateKey) {
+        this.logFile = logFile;
         this.encryptingPrivateKey = encryptingPrivateKey;
         this.viewingPrivateKey = viewingPrivateKey;
+        this.signingAlgorithmName = signingAlgorithmName;
+        this.signingPrivateKey = signingPrivateKey;
+        maintainHash = encryptingPrivateKey != null;
     }
 
-    final void initializeHashAlgorithm(final LogReaderRecord record, final AccumulativeDigest accumulativeDigest) {
+    AccumulativeDigest getAccumulativeDigest() {
+        return accumulativeDigest;
+    }
+
+    byte[] getSignatureFromRecord() {
+        return signatureFromRecord;
+    }
+
+    byte[] getAccumulatedHashFromRecord() {
+        return accumulatedHashFromRecord;
+    }
+
+    int getSequenceNumber() {
+        return sequenceNumber;
+    }
+
+    File getLogFile() {
+        return logFile;
+    }
+
+    int getRecordLength() {
+        return recordLength;
+    }
+
+    final void initializeHashAlgorithm(final LogReaderRecord record, final AccumulativeDigest accumulativeDigest) throws ValidationException {
         this.accumulativeDigest = accumulativeDigest;
-        recordAdded(record);
+        hashAndHandleRecordAdded(record);
     }
 
     final void initializeSecureRandomNumber(final LogReaderRecord record) throws ValidationException {
         checkRecordType(record, RecordType.SECRET_RANDOM_NUMBER);
-        final byte[] secureRandomBytes = LogReader.decryptMessageUsingPrivateKey(record.getBody(), encryptingPrivateKey);
-        accumulativeDigest.setSecureRandomBytesForReading(secureRandomBytes);
-        recordAdded(record);
+        if (maintainHash) {
+            final byte[] secureRandomBytes = LogReader.decryptMessageUsingPrivateKey(record.getBody(), encryptingPrivateKey);
+            accumulativeDigest.setSecureRandomBytesForReading(secureRandomBytes);
+        }
+        hashAndHandleRecordAdded(record);
     }
 
     final void initializeEncryptionSymmetricKey(LogReaderRecord record) throws ValidationException {
@@ -70,7 +114,7 @@ abstract class LogReaderRecordListener {
         if (viewingPrivateKey == null && encryptingPrivateKey != null) {
             secretKey = decryptSymmetricEncryptionKey(record, encryptingPrivateKey);
         }
-        recordAdded(record);
+        hashAndHandleRecordAdded(record);
     }
 
     final void initializeViewingSymmetricKey(LogReaderRecord record) throws ValidationException {
@@ -80,7 +124,7 @@ abstract class LogReaderRecordListener {
         } else if (encryptingPrivateKey == null) {
             logOrThrowException("No encrypting or viewing private key to decrypt the symmetric encryption key");
         }
-        recordAdded(record);
+        hashAndHandleRecordAdded(record);
     }
 
     final void initializeSigningCertificate(LogReaderRecord record) throws ValidationException {
@@ -89,16 +133,16 @@ abstract class LogReaderRecordListener {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             signingCertificate = cf.generateCertificate(new ByteArrayInputStream(record.getBody()));
         } catch (CertificateException e) {
-            throw new RuntimeException(e);
+            logOrThrowException("Could not read signing certificate", e);
         }
-        recordAdded(record);
+        hashAndHandleRecordAdded(record);
     }
 
     final void initializeHeaderSignature(LogReaderRecord record) throws ValidationException {
         checkRecordType(record, RecordType.HEADER_SIGNATURE);
         //TODO do something with signature?
         final byte[] headerSignature = record.getBody();
-        recordAdded(record);
+        hashAndHandleRecordAdded(record);
     }
 
     final void initializeLastFile(LogReaderRecord record) throws ValidationException {
@@ -115,9 +159,9 @@ abstract class LogReaderRecordListener {
             lastFileSignature = new byte[HeaderUtil.bytesToInt(record.getBody(), 8 + nameBytes.length + lastFileHash.length)];
             System.arraycopy(record.getBody(), 12 + nameBytes.length + lastFileHash.length, lastFileSignature, 0, lastFileSignature.length);
         } else if (record.getRecordType() != RecordType.AUDITOR_NOTIFICATION) {
-            throw new IllegalStateException("Expected to find last file information");
+            throw new IllegalStateException("Expected to find last file information, type was " + record.getRecordType());
         }
-        recordAdded(record);
+        hashAndHandleRecordAdded(record);
     }
 
     private SecretKey decryptSymmetricEncryptionKey(LogReaderRecord logRecordInfo, PrivateKey privateKey) {
@@ -128,8 +172,57 @@ abstract class LogReaderRecordListener {
         return new SecretKeySpec(rawKey, "AES");
     }
 
-    final void recordAdded(LogReaderRecord record) {
-        byte[] hash = accumulativeDigest.digestRecord(record.getRecordType(), record.getHeader(), record.getBody());
+    final void recordAdded(LogReaderRecord record) throws ValidationException {
+        final RecordType recordType = record.getRecordType();
+        if (signatureFromRecord != null) {
+            logOrThrowException("Unknown content at end of file");
+        } else if (recordType == RecordType.ACCUMULATED_HASH) {
+              if (accumulatedHashFromRecord != null) {
+                  logOrThrowException("The type of the record is " + RecordType.ACCUMULATED_HASH + " which already has been seen");
+              }
+              accumulatedHashFromRecord = record.getBody();
+              if (!Arrays.equals(accumulativeDigest.getAccumulativeHash(), accumulatedHashFromRecord)) {
+                  logOrThrowException("The calculated accumulative hash was different from the accumulative hash record");
+              }
+
+        } else if (recordType == RecordType.LOG_FILE_SIGNATURE) {
+            if (accumulatedHashFromRecord == null) {
+                logOrThrowException("Found " + RecordType.LOG_FILE_SIGNATURE + " without having seen an " + RecordType.ACCUMULATED_HASH + " record");
+            }
+            signatureFromRecord = record.getBody();
+
+            byte[] calculatedSignature = null;
+            try {
+                Signature signature = Signature.getInstance(signingAlgorithmName);
+                signature.initSign(signingPrivateKey);
+                signature.update(accumulativeDigest.getAccumulativeHash());
+                calculatedSignature = signature.sign();
+            } catch(Exception e) {
+                logOrThrowException("Could not calculate signature for checking", e);
+            }
+            if (!Arrays.equals(calculatedSignature, signatureFromRecord)) {
+                logOrThrowException("The signature calculated from the " + RecordType.ACCUMULATED_HASH + " is different from the one from the " + RecordType.LOG_FILE_SIGNATURE + " record.");
+            }
+        } else if (recordType == RecordType.CLIENT_LOG_DATA || recordType == RecordType.HEARTBEAT) {
+            if (accumulatedHashFromRecord != null) {
+                logOrThrowException("Did not expect any " + recordType + " after the " + RecordType.ACCUMULATED_HASH + " record");
+            }
+        } else if (recordType == RecordType.AUDITOR_NOTIFICATION) {
+            //This is fine until before the LOG_FILE_SIGNATURE
+        } else {
+            logOrThrowException("Unexpected record type " + recordType);
+        }
+
+        hashAndHandleRecordAdded(record);
+    }
+
+    private void hashAndHandleRecordAdded(LogReaderRecord record) {
+        byte[] hash = null;
+        if (maintainHash) {
+            hash = accumulativeDigest.digestRecord(record.getRecordType(), record.getHeader(), record.getBody());
+        }
+        sequenceNumber = record.getSequenceNumber();
+        recordLength = record.getRecordLength();
         handleRecordAdded(record, hash);
     }
 
@@ -149,7 +242,7 @@ abstract class LogReaderRecordListener {
 
     protected abstract void logOrThrowException(String message, Throwable cause) throws ValidationException;
 
-    AccumulativeDigest getAccumulativeDigest() {
-        return accumulativeDigest;
-    }
+    protected abstract void unrecoverableError(Throwable t) throws ValidationException;
+
+    protected abstract void finalizeErrors();
 }
