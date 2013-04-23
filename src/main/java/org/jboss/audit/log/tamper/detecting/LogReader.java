@@ -209,6 +209,7 @@ class LogReader {
         private final List<ErrorInfo> errorsForCurrentRecord = new ArrayList<LogReader.ErrorInfo>();
         private long lastTimeStamp;
         private int lastSequenceNumber;
+        private int lastRecordLength = -1;
         private Throwable unrecoverableError;
 
         VerifyingLogFileRecordListener(File logFile, PrivateKey encryptingPrivateKey, PrivateKey viewingPrivateKey, String signingAlgorithmName, PrivateKey signingPrivateKey, OutputStream out, LogRecordBodyOutputter bodyOutputter){
@@ -223,7 +224,7 @@ class LogReader {
             }
         }
 
-        protected void handleRecordAdded(LogReaderRecord record, byte[] calculatedHashForRecord) {
+        protected void handleRecordAdded(LogReaderRecord record, byte[] calculatedHashForRecord) throws ValidationException {
             final StringBuffer header = new StringBuffer("\n");
 
             int sequenceNumber = record.getSequenceNumber();
@@ -246,6 +247,13 @@ class LogReader {
             header.append("Last Record Length: " + record.getLastRecordLength() + "\n");
             header.append("Record Length: " + record.getRecordLength() + "\n");
 
+            if (record.getRecordLength() != (record.getHeader().length + record.getBody().length + record.getHash().length)) {
+                errorsForCurrentRecord.add(new ErrorInfo("The record length in in this record was " + record.getRecordLength() + " but the actual record length was " + (record.getHeader().length + record.getBody().length + record.getHash().length), null));
+            }
+            if (lastRecordLength != -1 && lastRecordLength != record.getLastRecordLength()) {
+                errorsForCurrentRecord.add(new ErrorInfo("The last record length in this record was " + record.getLastRecordLength() + " but the actual last record length was " + lastRecordLength, null));
+            }
+            lastRecordLength = record.getRecordLength();
             if (!Arrays.equals(calculatedHashForRecord, record.getHash())) {
                 errorsForCurrentRecord.add(new ErrorInfo("Wrong hash for record. The calculated one should be " + Arrays.toString(calculatedHashForRecord) + ", while it was " + Arrays.toString(record.getHash()), null));
             }
@@ -271,8 +279,12 @@ class LogReader {
             try {
                 out.write(header.toString().getBytes());
                 if (bodyOutputter != null && record.getRecordType() == RecordType.CLIENT_LOG_DATA) {
+                    byte[] body = record.getBody();
+                    if (record.getEncryptionType().equals(EncryptionType.SYMMETRIC)) {
+                        body = decryptSymmetricLogMessage(record);
+                    }
                     out.write("Data:\n".getBytes());
-                    bodyOutputter.outputLogRecordBody(out, record.getBody());
+                    bodyOutputter.outputLogRecordBody(out, body);
                     out.write("\n".getBytes());
                 }
             } catch (IOException e) {
