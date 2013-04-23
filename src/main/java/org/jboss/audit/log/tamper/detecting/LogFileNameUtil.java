@@ -24,6 +24,7 @@ package org.jboss.audit.log.tamper.detecting;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.Locale;
@@ -65,6 +66,8 @@ class LogFileNameUtil {
         if (files.length == 0) {
             return null;
         }
+
+        System.out.println(Arrays.asList(files));
 
         String currentDate = logFilename == null ? null : getDatestamp(logFilename);
         int currentSeq = logFilename == null ? 0 : getSequence(logFilename);

@@ -151,6 +151,17 @@ class LogReader {
             return listener.getRecordLength();
         }
 
+        String getLastFileName() {
+            return listener.getLastFileName();
+        }
+
+        byte[] getLastFileSignature() {
+            return listener.getLastFileSignature();
+        }
+
+        byte[] getLastFileHash() {
+            return listener.getLastFileHash();
+        }
     }
 
 

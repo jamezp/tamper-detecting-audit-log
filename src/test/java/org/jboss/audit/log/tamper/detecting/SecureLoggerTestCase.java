@@ -333,15 +333,57 @@ public class SecureLoggerTestCase {
         //File file = new LogFileNameUtil().getPreviousLogFilename(null);
 
         SecureLoggerBuilder builder = createLogBuilder();
-        builder.verifyLog(new OutputStream() {
-
-            @Override
-            public void write(int b) throws IOException {
-                System.out.write(b);
-            }
-        }, null, LogRecordBodyOutputter.RAW);
+        builder.verifyLogFile(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null);
     }
 
+    @Test
+    public void testVerifyLogFileChain() throws Exception {
+        SecureLogger logger = null;
+        try {
+            logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
+            logger.logMessage("Hello".getBytes());
+            logger.logMessage("Hello again".getBytes());
+        } finally {
+            if (logger != null) {
+                logger.closeLog();
+            }
+        }
+
+        createLogBuilder().verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
+
+        try {
+            Thread.sleep(1000); //TODO Sleep since the naming stuff needs 1s difference
+            logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
+            logger.logMessage("It is me".getBytes());
+            logger.logMessage("Here I am".getBytes());
+        } finally {
+            if (logger != null) {
+                logger.closeLog();
+            }
+        }
+
+        createLogBuilder().verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
+
+        try {
+            Thread.sleep(1000); //TODO Sleep since the naming stuff needs 1s difference
+            logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
+            logger.logMessage("It is me again".getBytes());
+            logger.logMessage("Here I am again".getBytes());
+        } finally {
+            if (logger != null) {
+                logger.closeLog();
+            }
+        }
+
+        LogFileNameUtil util = new LogFileNameUtil(testLogDir);
+        File currentFile = util.getPreviousLogFilename(null);
+        System.out.println(currentFile);
+        File file = util.getPreviousLogFilename(currentFile.getName());
+        file.delete();
+
+        createLogBuilder().verifyLogFileChain(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null, -1);
+
+    }
     private void overrideTestDirAndTrusted(String logDir) throws IOException, URISyntaxException {
         File fromDir = new File("src");
         fromDir = new File(fromDir, "test");
@@ -378,7 +420,7 @@ public class SecureLoggerTestCase {
         SecureLoggerBuilder builder = createLogBuilder();
 
         for (RecoverAction repairAction : recoverActions) {
-            builder.addRepairAction(repairAction);
+            builder.addRecoverAction(repairAction);
         }
         return builder.buildLogger();
     }

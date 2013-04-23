@@ -33,23 +33,89 @@ import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAct
  */
 public interface SecureLoggerBuilder {
 
+    /**
+     * Get the builder for the keystore information for the key pair used to encrypt/decrypt
+     * the secure random number, and the encrypted log records
+     *
+     * @return the builder
+     */
     EncryptingKeyPairBuilder encryptingStoreBuilder();
 
+    /**
+     * Get the builder for the keystore information for the key pair used to sign the
+     * log record
+     *
+     * @return the builder
+     */
     SigningKeyPairBuilder signingStoreBuilder();
 
+    /**
+     * Set the path for the certificate to view the log
+     *
+     * @param path the path of the viewing certificate
+     * @return this builder
+     */
     SecureLoggerBuilder setViewingCertificatePath(File path) throws KeyStoreInitializationException ;
 
+    /**
+     * Set the root directory for the log files
+     *
+     * @param file the log file root directory
+     * @return this builder
+     */
     SecureLoggerBuilder setLogFileRoot(File file);
 
+    /**
+     * Set the trusted location maintaing the last log file, accumulated hash and sequence number
+     *
+     * @param file the trusted location path
+     * @return this builder
+     */
     SecureLoggerBuilder setTrustedLocation(File file);
 
-    SecureLoggerBuilder addRepairAction(RecoverAction repairAction);
+    /**
+     * Add a recover action to recover from a {@link RecoverableException} when calling {@link #buildLogger()}
+     *
+     * @return this builder
+     */
+    SecureLoggerBuilder addRecoverAction(RecoverAction recoverAction);
 
+    /**
+     * Builds the logger
+     *
+     * @return a secure logger
+     * @throws KeyStoreInitializationException if there was a problem loading any of the keystores and certificates
+     * @throws RecoverableException if there were some problems relating the current log to the trusted location
+     * @throws ValidationException if there were some problems checking the log
+     */
     SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException, ValidationException;
 
+    /**
+     * Lists the log files in the log file root
+     *
+     * @return the list of the log files sorted from newest to oldest
+     */
     List<File> listLogFiles();
 
-    void verifyLog(OutputStream outputStream, File file, LogRecordBodyOutputter bodyOutputter) throws KeyStoreInitializationException;
+    /**
+     * Verify/read a single log file.
+     *
+     * @param outputStream the output stream to write the output to
+     * @param bodyOutputter interprets the body bytes for each log record. If {@code null} the body will not be interpreted
+     * @param file the file to inspect. If {@code null} it will inspect the most recent file in the log file root directory
+     *
+     */
+    void verifyLogFile(OutputStream outputStream, LogRecordBodyOutputter bodyOutputter, File file) throws KeyStoreInitializationException;
+
+    /**
+     * Verify/read a chain of log files.
+     *
+     * @param outputStream the output stream to write the output to
+     * @param bodyOutputter interprets the body bytes for each log record. If {@code null} the body will not be interpreted
+     * @param file the file to inspect. If {@code null} it will inspect the most recent file in the log file root directory
+     * @param count the number of older files to inspect. {@code 0} means only inspect the current, and {@code -1} means inspect all the way to the end.
+     */
+    void verifyLogFileChain(OutputStream outputStream, LogRecordBodyOutputter bodyOutputter, File file, int count) throws KeyStoreInitializationException;
 
     interface SigningKeyPairBuilder {
         SigningKeyPairBuilder setPath(File location);

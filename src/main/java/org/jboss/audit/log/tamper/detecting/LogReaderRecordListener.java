@@ -94,6 +94,18 @@ abstract class LogReaderRecordListener {
         return recordLength;
     }
 
+    String getLastFileName() {
+        return lastFileName;
+    }
+
+    byte[] getLastFileHash() {
+        return lastFileHash;
+    }
+
+    byte[] getLastFileSignature() {
+        return lastFileSignature;
+    }
+
     final void initializeHashAlgorithm(final LogReaderRecord record, final AccumulativeDigest accumulativeDigest) throws ValidationException {
         this.accumulativeDigest = accumulativeDigest;
         hashAndHandleRecordAdded(record);

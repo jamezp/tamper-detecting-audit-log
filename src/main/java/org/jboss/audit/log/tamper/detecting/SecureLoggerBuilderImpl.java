@@ -25,6 +25,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -71,7 +72,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     }
 
     @Override
-    public SecureLoggerBuilder addRepairAction(RecoverAction repairAction) {
+    public SecureLoggerBuilder addRecoverAction(RecoverAction repairAction) {
         repairActions.add(repairAction);
         return this;
     }
@@ -97,29 +98,43 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     }
 
     @Override
-    public void verifyLog(OutputStream outputStream, File file, LogRecordBodyOutputter bodyOutputter) throws KeyStoreInitializationException {
+    public void verifyLogFile(OutputStream outputStream, LogRecordBodyOutputter bodyOutputter, File file) throws KeyStoreInitializationException {
+        verifyLogFileChain(outputStream, bodyOutputter, file, 0);
+    }
+
+
+    @Override
+    public void verifyLogFileChain(final OutputStream outputStream, final LogRecordBodyOutputter bodyOutputter, final File file, final int count)
+            throws KeyStoreInitializationException {
+        LogFileNameUtil logFileNameUtil = new LogFileNameUtil(logFileDir);
+        final File lastLogFile = logFileNameUtil.getPreviousLogFilename(null);
+        final File inspectFile;
         if (file == null) {
-            file = new LogFileNameUtil(logFileDir).getPreviousLogFilename(null);
-            if (file == null) {
+            inspectFile = lastLogFile;
+            if (inspectFile == null) {
                 throw new IllegalStateException("Could not find any log files in " + logFileDir);
             }
+        } else {
+            inspectFile = file;
         }
+
+        final boolean isLast = lastLogFile.getName().equals(inspectFile.getName());
+
         KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
-        LogReader reader = new LogReader(keyManager, file);
+        LogReader reader = new LogReader(keyManager, inspectFile);
         RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
         TrustedLocation trustedLocation = null;
-        try {
-            do {
-                trustedLocation = TrustedLocation.create(recoverableContext, keyManager, logFileDir, trustedLocationFile);
-            } while (recoverableContext.isRecheck());
-        }catch (RecoverableException e) {
+        if (isLast) {
             try {
-                outputStream.write(("\nError: " + e.getMessage()).getBytes());
-            } catch (IOException ie) {
-                ie.printStackTrace();
+                do {
+                    trustedLocation = TrustedLocation.create(recoverableContext, keyManager, logFileDir, trustedLocationFile);
+                } while (recoverableContext.isRecheck());
+            }catch (RecoverableException e) {
+                writeMessageToOutputStream(outputStream, "Error: " + e.getMessage() + "\n");
             }
         }
 
+        //Always read the file in question
         LogInfo logInfo = null;
         try {
             logInfo = reader.verifyLogFile(outputStream, bodyOutputter);
@@ -134,18 +149,72 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
                     trustedLocation.checkLastLogRecord(recoverableContext, logInfo);
                 } while (recoverableContext.isRecheck());
             } catch (RecoverableException e) {
-                try {
-                    outputStream.write(("\nError: " + e.getMessage()).getBytes());
-                } catch (IOException ie) {
-                    ie.printStackTrace();
-                }
+                writeMessageToOutputStream(outputStream, "Error: " + e.getMessage() + "\n");
             } catch (ValidationException e) {
                 IoUtils.printStackTraceToOutputStream(e, outputStream);
             }
         }
+
+        writeMessageToOutputStream(outputStream, "\n**** Finished inspection of " + logInfo.getLogFile().getName() + " ****\n");
+
+        //Now check the chain if requested
+        int current = count;
+        while (current > 0 || current ==-1) {
+            if (current > 0) {
+                current--;
+            }
+            if (logInfo.getLastFileName() == null) {
+                writeMessageToOutputStream(outputStream, "\n**** The last file name in " + logInfo.getLogFile().getName() + " is null. End of chain. ****\n");
+                break;
+            }
+
+            File previousLogFile = new File(logFileDir, logInfo.getLastFileName());
+            if (!previousLogFile.exists()) {
+                writeMessageToOutputStream(outputStream, "Error: The last log file in " + logInfo.getLogFile().getName() + " was given as " + logInfo.getLastFileName() + ". That file does not exist. Searching for previous file to continue verification of chain before that file\n");
+                previousLogFile = logFileNameUtil.getPreviousLogFilename(logInfo.getLogFile().getName());
+                if (previousLogFile != null) {
+                    writeMessageToOutputStream(outputStream, "\n*** Continuing verification with " + previousLogFile.getName() + " ***\n");
+                } else {
+                    writeMessageToOutputStream(outputStream, "Error: No earlier log files than " + logInfo.getLogFile().getName() + " could be found in " + logFileDir + "\n");
+                    break;
+                }
+            } else {
+                writeMessageToOutputStream(outputStream, "\n***  inspecting the previous log file " + previousLogFile.getName() + "***\n");
+            }
+
+
+            LogInfo lastInspected = logInfo;
+            try {
+
+                reader = new LogReader(keyManager, previousLogFile);
+                logInfo = reader.verifyLogFile(outputStream, bodyOutputter);
+            } catch (ValidationException e) {
+                //Should not happen
+                throw new IllegalStateException(e);
+            }
+
+            if (logInfo.getLastFileName() != null) {
+                if (!Arrays.equals(lastInspected.getLastFileHash(), logInfo.getAccumulatedHash())){
+                    writeMessageToOutputStream(outputStream, "Error: The last file hash recorded in " + logInfo.getLogFile().getName() + " is different from the accumulated hash in " + logInfo.getLogFile().getName() + "\n");
+                }
+                if (!Arrays.equals(lastInspected.getLastFileSignature(), logInfo.getSignature())) {
+                    writeMessageToOutputStream(outputStream, "Error: The last file signature recorded in " + logInfo.getLogFile().getName() + " is different from the signature in " + logInfo.getLogFile().getName() + "\n");
+                }
+            } else {
+                writeMessageToOutputStream(outputStream, "\n**** Finished inspection of " + logInfo.getLogFile().getName() + " ****\n");
+            }
+        }
+
     }
 
+    private void writeMessageToOutputStream(OutputStream out, String message) {
+        try {
+            out.write(message.getBytes());
+        } catch (IOException ie) {
+            ie.printStackTrace();
+        }
 
+    }
 
     @Override
     public List<File> listLogFiles() {
