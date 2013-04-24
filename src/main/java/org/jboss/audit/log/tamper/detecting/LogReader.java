@@ -39,10 +39,10 @@ import javax.crypto.Cipher;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 class LogReader {
-    private final KeyManager keyManager;
+    private final ServerKeyManager keyManager;
     private final File logFile;
 
-    LogReader(KeyManager keyManager, File logFile) {
+    LogReader(ServerKeyManager keyManager, File logFile) {
         this.keyManager = keyManager;
         this.logFile = logFile;
     }
@@ -51,12 +51,12 @@ class LogReader {
      * Does a simple check of the accumulative hash in the file, and then checks that the signed accumulative hash is the same as we calculate
      */
     LogInfo checkLogFile() throws ValidationException {
-        return readLogFile(new SimpleCheckLogFileRecordListener(logFile, keyManager.getEncryptingPrivateKey(), keyManager.getViewingPrivateKey(), keyManager.getSigningAlgorithmName(), keyManager.getSigningPrivateKey()));
+        return readLogFile(new SimpleCheckLogFileRecordListener(logFile, keyManager.getEncryptingPrivateKey(), null, keyManager.getSigningAlgorithmName(), keyManager.getSigningPrivateKey()));
     }
 
 
     LogInfo verifyLogFile(OutputStream out, LogRecordBodyOutputter bodyOutputter) throws ValidationException {
-        return readLogFile(new VerifyingLogFileRecordListener(logFile, keyManager.getEncryptingPrivateKey(), keyManager.getViewingPrivateKey(), keyManager.getSigningAlgorithmName(), keyManager.getSigningPrivateKey(), out, bodyOutputter));
+        return readLogFile(new VerifyingLogFileRecordListener(logFile, keyManager.getEncryptingPrivateKey(), null, keyManager.getSigningAlgorithmName(), keyManager.getSigningPrivateKey(), out, bodyOutputter));
     }
 
     public void viewLogFile(PrivateKey viewingPrivateKey, OutputStream out, LogRecordBodyOutputter bodyOutputter) {

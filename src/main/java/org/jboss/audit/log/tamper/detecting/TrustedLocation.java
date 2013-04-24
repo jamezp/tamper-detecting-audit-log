@@ -46,7 +46,7 @@ import org.jboss.audit.log.tamper.detecting.RecoverableErrorContext.RecoverCallb
  */
 class TrustedLocation {
 
-    private final KeyManager keyManager;
+    private final ServerKeyManager keyManager;
     private final File trustedLocationFile;
     private final File previousLogFile;
     private final File currentInspectionLogFile;
@@ -54,7 +54,7 @@ class TrustedLocation {
     private final int lastSequenceNumber;
     private final boolean inspectingPreviousLogFile;
 
-    private TrustedLocation(KeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile,
+    private TrustedLocation(ServerKeyManager keyManager, File logFileDir, File trustedLocationFile, File previousLogFile, File currentInspectionLogFile,
             int lastSequenceNumber, byte[] lastAccumulativeHash, boolean inspectingPreviousLogFile) {
         this.keyManager = keyManager;
         this.trustedLocationFile = trustedLocationFile;
@@ -66,7 +66,7 @@ class TrustedLocation {
     }
 
 
-    static TrustedLocation create(final RecoverableErrorContext recoverableContext, final KeyManager keyManager, final File logFileDir, final File trustedLocationFile) throws RecoverableException {
+    static TrustedLocation create(final RecoverableErrorContext recoverableContext, final ServerKeyManager keyManager, final File logFileDir, final File trustedLocationFile) throws RecoverableException {
         final LogFileNameUtil logFileNameUtil = new LogFileNameUtil(logFileDir);
         final File lastLogFile = logFileNameUtil.getPreviousLogFilename(null);
         File currentInspectionFile = null;
@@ -236,7 +236,7 @@ class TrustedLocation {
             this.lastAccumulativeHash = lastAccumulativeHash;
         }
 
-        private static Content read(KeyManager keyManager, File trustedLocationFile) throws Exception {
+        private static Content read(ServerKeyManager keyManager, File trustedLocationFile) throws Exception {
             byte[] fileBytes = new byte[(int)trustedLocationFile.length()];
             byte[] decryptedBytes = null;
             final RandomAccessFile raf = new RandomAccessFile(trustedLocationFile, "rw");

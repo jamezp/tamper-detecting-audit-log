@@ -22,7 +22,6 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
-import java.util.concurrent.BlockingQueue;
 
 import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
 
@@ -31,19 +30,17 @@ import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 class SecureLoggerImpl implements SecureLogger {
-    private final BlockingQueue<LogWriterRecord> recordQueue;
     private final File logFileDir;
     private final LogWriter logWriter;
 
-    private SecureLoggerImpl(File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, LogWriter logWriter) {
+    private SecureLoggerImpl(File logFileDir, LogWriter logWriter) {
         this.logFileDir = logFileDir;
-        this.recordQueue = recordQueue;
         this.logWriter = logWriter;
     }
 
-    static SecureLogger create(KeyManager securityFacade, File logFileDir, BlockingQueue<LogWriterRecord> recordQueue, TrustedLocation trustedLocation, LogInfo lastLogInfo, boolean encryptLogMessages) {
-        LogWriter writer = LogWriter.create(securityFacade, logFileDir, recordQueue, trustedLocation, lastLogInfo, encryptLogMessages);
-        SecureLoggerImpl logger = new SecureLoggerImpl(logFileDir, recordQueue, writer);
+    static SecureLogger create(ServerKeyManager securityFacade, File logFileDir, TrustedLocation trustedLocation, LogInfo lastLogInfo, boolean encryptLogMessages) {
+        LogWriter writer = LogWriter.create(securityFacade, logFileDir, trustedLocation, lastLogInfo, encryptLogMessages);
+        SecureLoggerImpl logger = new SecureLoggerImpl(logFileDir, writer);
         logger.initialize();
         return logger;
     }
@@ -56,12 +53,11 @@ class SecureLoggerImpl implements SecureLogger {
 
     @Override
     public void logMessage(byte[] message) {
-        recordQueue.add(new LogWriterRecord(message, RecordType.CLIENT_LOG_DATA));
+        logWriter.logMessage(message);
     }
 
     @Override
-    public void closeLog() {
-        recordQueue.add(logWriter.getCloseLogRecord());
-        logWriter.awaitClose();
+    public void closeLog(ClosedCallback closedCallback) {
+        logWriter.closeLog(closedCallback);
     }
 }

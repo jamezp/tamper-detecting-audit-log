@@ -29,7 +29,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.LinkedBlockingQueue;
 
 import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
 import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
@@ -38,7 +37,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
 
     private KeyPairBuilderImpl encryptingStore;
     private KeyPairBuilderImpl signingStore;
-    private KeyManager.ViewingCertificateInfo viewingStore;
+    private ServerKeyManager.ViewingCertificateInfo viewingStore;
     private File logFileDir;
     private File trustedLocationFile;
     private Set<RecoverAction> repairActions = new HashSet<RecoverAction>();
@@ -56,7 +55,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
 
     @Override
     public SecureLoggerBuilder setViewingCertificatePath(File path) throws KeyStoreInitializationException  {
-        viewingStore = KeyManager.ViewingCertificateInfo.create(path);
+        viewingStore = ServerKeyManager.ViewingCertificateInfo.create(path);
         return this;
     }
 
@@ -88,7 +87,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
     @Override
     public SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException, ValidationException {
         RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
-        KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
+        ServerKeyManager keyManager = new ServerKeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
         TrustedLocation trustedLocation;
         LogInfo lastLogInfo;
         do {
@@ -101,7 +100,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
                 trustedLocation.checkLastLogRecord(recoverableContext, lastLogInfo);
             }
         } while (recoverableContext.isRecheck());
-        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, new LinkedBlockingQueue<LogWriterRecord>(), trustedLocation, lastLogInfo, encryptLogMessages);
+        SecureLogger secureLogger = SecureLoggerImpl.create(keyManager, logFileDir, trustedLocation, lastLogInfo, encryptLogMessages);
         return secureLogger;
     }
 
@@ -128,7 +127,7 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
 
         final boolean isLast = lastLogFile.getName().equals(inspectFile.getName());
 
-        KeyManager keyManager = new KeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
+        ServerKeyManager keyManager = new ServerKeyManager(encryptingStore.buildEncrypting(), signingStore.buildSigning(), viewingStore);
         LogReader reader = new LogReader(keyManager, inspectFile);
         RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
         TrustedLocation trustedLocation = null;
@@ -287,9 +286,9 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
             return SecureLoggerBuilderImpl.this;
         }
 
-        private KeyManager.SigningKeyPairInfo buildSigning() throws KeyStoreInitializationException {
+        private ServerKeyManager.SigningKeyPairInfo buildSigning() throws KeyStoreInitializationException {
             try {
-                return KeyManager.SigningKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName, algorithm);
+                return ServerKeyManager.SigningKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName, algorithm);
             } catch (Exception e) {
                 if (e instanceof RuntimeException) {
                     throw (RuntimeException)e;
@@ -298,9 +297,9 @@ class SecureLoggerBuilderImpl implements SecureLoggerBuilder {
             }
         }
 
-        private KeyManager.EncryptingKeyPairInfo buildEncrypting() throws KeyStoreInitializationException {
+        private ServerKeyManager.EncryptingKeyPairInfo buildEncrypting() throws KeyStoreInitializationException {
             try {
-                return KeyManager.EncryptingKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName);
+                return ServerKeyManager.EncryptingKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName);
             } catch (Exception e) {
                 if (e instanceof RuntimeException) {
                     throw (RuntimeException)e;

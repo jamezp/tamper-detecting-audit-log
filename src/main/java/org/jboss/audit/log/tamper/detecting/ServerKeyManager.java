@@ -37,17 +37,18 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.PBEParameterSpec;
 
 /**
+ * Wrapper around the security constructs needed to write and verify logs
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-class KeyManager {
+class ServerKeyManager {
     private final EncryptingKeyPairInfo encryptingKeyPair;
     private final SigningKeyPairInfo signingKeyPair;
     private final ViewingCertificateInfo viewingCertificate;
     private final SecretKey secretKey;
     private final PBEParameterSpec pbeParameterSpec;
 
-    KeyManager(EncryptingKeyPairInfo encryptingKeyStore, SigningKeyPairInfo signingKeyStore, ViewingCertificateInfo viewingKeyStore) throws KeyStoreInitializationException {
+    ServerKeyManager(EncryptingKeyPairInfo encryptingKeyStore, SigningKeyPairInfo signingKeyStore, ViewingCertificateInfo viewingKeyStore) throws KeyStoreInitializationException {
         this.encryptingKeyPair = encryptingKeyStore;
         this.signingKeyPair = signingKeyStore;
         this.viewingCertificate = viewingKeyStore;
@@ -65,11 +66,6 @@ class KeyManager {
 
     PublicKey getViewingPublicKey() {
         return viewingCertificate.publicKey;
-    }
-
-    PrivateKey getViewingPrivateKey() {
-        //TODO
-        return null;
     }
 
     PublicKey getEncryptingPublicKey() {
@@ -106,19 +102,14 @@ class KeyManager {
 
     static class SigningKeyPairInfo {
         private final String storePassword;
-        private final PublicKey publicKey;
         private final PrivateKey privateKey;
-        private final Certificate certificate;
         private final byte[] publicKeyCert;
         private final HashAlgorithm hashAlgorithm;
         private final String algorithmName;
 
-        private SigningKeyPairInfo(String storePassword, PrivateKey privateKey, Certificate certificate, byte[] publicKeyCert,
-                PublicKey publicKey, HashAlgorithm hashAlgorithm, String algorithmName) {
+        private SigningKeyPairInfo(String storePassword, PrivateKey privateKey, byte[] publicKeyCert, HashAlgorithm hashAlgorithm, String algorithmName) {
             this.storePassword = storePassword;
-            this.publicKey = publicKey;
             this.privateKey = privateKey;
-            this.certificate = certificate;
             this.publicKeyCert = publicKeyCert;
             this.hashAlgorithm = hashAlgorithm;
             this.algorithmName = algorithmName;
@@ -142,7 +133,7 @@ class KeyManager {
                 final byte[] publicKeyCert = certificate.getEncoded();
                 final PublicKey publicKey = certificate.getPublicKey();
                 final String algorithmName = algorithm.toString() + "with" + publicKey.getAlgorithm();
-                return new SigningKeyPairInfo(keyStorePassword, privateKey, certificate, publicKeyCert, publicKey, algorithm, algorithmName);
+                return new SigningKeyPairInfo(keyStorePassword, privateKey, publicKeyCert, algorithm, algorithmName);
             } catch (Exception e) {
                 if (e instanceof RuntimeException) {
                     throw (RuntimeException) e;
@@ -154,11 +145,9 @@ class KeyManager {
 
     static class EncryptingKeyPairInfo {
         private final PublicKey publicKey;
-        private final String storePassword;
         private final PrivateKey privateKey;
 
-        private EncryptingKeyPairInfo(String storePassword, PrivateKey privateKey, PublicKey publicKey) {
-            this.storePassword = storePassword;
+        private EncryptingKeyPairInfo(PrivateKey privateKey, PublicKey publicKey) {
             this.publicKey = publicKey;
             this.privateKey = privateKey;
         }
@@ -176,7 +165,7 @@ class KeyManager {
                 final PrivateKey privateKey = (PrivateKey)keyStore.getKey(keyName, keyPassword.toCharArray());
                 final Certificate certificate = keyStore.getCertificate(keyName);
                 final PublicKey publicKey = certificate.getPublicKey();
-                return new EncryptingKeyPairInfo(keyStorePassword, privateKey, publicKey);
+                return new EncryptingKeyPairInfo(privateKey, publicKey);
             } catch (Exception e) {
                 if (e instanceof RuntimeException) {
                     throw (RuntimeException)e;

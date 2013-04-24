@@ -34,6 +34,7 @@ import java.io.OutputStream;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
@@ -41,10 +42,11 @@ import javax.crypto.spec.PBEParameterSpec;
 
 import junit.framework.Assert;
 
-import org.jboss.audit.log.tamper.detecting.KeyManager.EncryptingKeyPairInfo;
-import org.jboss.audit.log.tamper.detecting.KeyManager.SigningKeyPairInfo;
-import org.jboss.audit.log.tamper.detecting.KeyManager.ViewingCertificateInfo;
 import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
+import org.jboss.audit.log.tamper.detecting.SecureLogger.ClosedCallback;
+import org.jboss.audit.log.tamper.detecting.ServerKeyManager.EncryptingKeyPairInfo;
+import org.jboss.audit.log.tamper.detecting.ServerKeyManager.SigningKeyPairInfo;
+import org.jboss.audit.log.tamper.detecting.ServerKeyManager.ViewingCertificateInfo;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -85,7 +87,7 @@ public class SecureLoggerTestCase {
 
     @Test
     public void testKeyManagerGetsInitialized() throws Exception {
-        KeyManager facade = new KeyManager(getEncryptingKeyPair(), getSigningKeyPair(), getViewingCertificate());
+        ServerKeyManager facade = new ServerKeyManager(getEncryptingKeyPair(), getSigningKeyPair(), getViewingCertificate());
         SecretKey key = facade.getSecretKey();
         Assert.assertNotNull(key);
         PBEParameterSpec pbeParameterSpec = facade.getPbeParameterSpec();
@@ -113,7 +115,7 @@ public class SecureLoggerTestCase {
         }
 
         SecureLogger logger = createLogger(RecoverAction.REBUILD_TRUSTED_LOCATION);
-        logger.closeLog();
+        closeLog(logger);
     }
 
     @Test
@@ -127,7 +129,7 @@ public class SecureLoggerTestCase {
         }
         try {
             logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
-            logger.closeLog();
+            closeLog(logger);
 
             //First try deleting the only log file
             new LogFileNameUtil(testLogDir).findLatestLogFileName().delete();
@@ -137,17 +139,17 @@ public class SecureLoggerTestCase {
             } catch (RecoverableException expected) {
             }
             logger = createLogger(RecoverAction.INSPECT_LAST_LOG_FILE);
-            logger.closeLog();
+            closeLog(logger);
 
             //Now try with a few more and deleting the last
             logger = createLogger();
             logger.logMessage("aaaa".getBytes());
-            logger.closeLog();
+            closeLog(logger);
             logger = createLogger();
             logger.logMessage("aaaa".getBytes());
             logger.logMessage("aaaa".getBytes());
             logger.logMessage("aaaa".getBytes());
-            logger.closeLog();
+            closeLog(logger);
 
             new LogFileNameUtil(testLogDir).findLatestLogFileName().delete();
             try {
@@ -156,11 +158,11 @@ public class SecureLoggerTestCase {
             } catch (RecoverableException expected) {
             }
             logger = createLogger(RecoverAction.INSPECT_LAST_LOG_FILE);
-            logger.closeLog();
+            closeLog(logger);
 
             logger = createLogger();
         } finally {
-            logger.closeLog();
+            closeLog(logger);
         }
     }
 
@@ -176,20 +178,20 @@ public class SecureLoggerTestCase {
         try {
             logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
             logger.logMessage("Hello".getBytes());
-            logger.closeLog();
+            closeLog(logger);
 
             logger = createLogger();
             logger.logMessage("Hello".getBytes());
             Thread.sleep(1500);
             logger.logMessage("Test".getBytes());
 
-            logger.closeLog();
+            closeLog(logger);
 
             logger = createLogger();
             logger.logMessage("Hello".getBytes());
         } finally {
             if (logger != null) {
-                logger.closeLog();
+                closeLog(logger);
             }
         }
     }
@@ -207,7 +209,7 @@ public class SecureLoggerTestCase {
             Assert.assertTrue(expected.getCondition().getAllowedActions().contains(RecoverAction.REPAIR_TRUSTED_LOCATION));
         }
         logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION);
-        logger.closeLog();
+        closeLog(logger);
     }
 
     @Test
@@ -223,7 +225,7 @@ public class SecureLoggerTestCase {
             Assert.assertTrue(expected.getCondition().getAllowedActions().contains(RecoverAction.REPAIR_MISSING_SIGNATURE));
         }
         logger = createLogger(RecoverAction.REPAIR_MISSING_SIGNATURE);
-        logger.closeLog();
+        closeLog(logger);
     }
 
     @Test
@@ -245,7 +247,7 @@ public class SecureLoggerTestCase {
             Assert.assertTrue(expected.getCondition().getAllowedActions().contains(RecoverAction.REPAIR_MISSING_SIGNATURE));
         }
         logger = createLogger(RecoverAction.REPAIR_MISSING_SIGNATURE);
-        logger.closeLog();
+        closeLog(logger);
     }
 
     @Test
@@ -255,7 +257,7 @@ public class SecureLoggerTestCase {
         //Here we try to fix everything in one go
         overrideTestDirAndTrusted("system-crash-logs/before-signature-no-trustedlocation");
         SecureLogger logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION, RecoverAction.REPAIR_MISSING_SIGNATURE);
-        logger.closeLog();
+        closeLog(logger);
     }
 
     @Test
@@ -271,7 +273,7 @@ public class SecureLoggerTestCase {
             Assert.assertTrue(expected.getCondition().getAllowedActions().contains(RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH));
         }
         logger = createLogger(RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH);
-        logger.closeLog();
+        closeLog(logger);
     }
 
 
@@ -295,7 +297,7 @@ public class SecureLoggerTestCase {
             Assert.assertTrue(expected.getCondition().getAllowedActions().contains(RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH));
         }
         logger = createLogger(RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH);
-        logger.closeLog();
+        closeLog(logger);
     }
 
     @Test
@@ -305,7 +307,7 @@ public class SecureLoggerTestCase {
         //Here we try to fix everything in one go
         overrideTestDirAndTrusted("system-crash-logs/during-logging-no-trustedlocation");
         SecureLogger logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION, RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH);
-        logger.closeLog();
+        closeLog(logger);
     }
 
 //    @Test
@@ -314,7 +316,7 @@ public class SecureLoggerTestCase {
 //        SecureLogger logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
 //        logger.logMessage("Hello".getBytes());
 //        logger.logMessage("Hello2".getBytes());
-//        logger.closeLog();
+//        closeLog(logger);
 //
 //    }
 
@@ -327,7 +329,7 @@ public class SecureLoggerTestCase {
             logger.logMessage("Hello again".getBytes());
         } finally {
             if (logger != null) {
-                logger.closeLog();
+                closeLog(logger);
             }
         }
 
@@ -346,7 +348,7 @@ public class SecureLoggerTestCase {
             logger.logMessage("Hello again".getBytes());
         } finally {
             if (logger != null) {
-                logger.closeLog();
+                closeLog(logger);
             }
         }
 
@@ -359,7 +361,7 @@ public class SecureLoggerTestCase {
             logger.logMessage("Here I am".getBytes());
         } finally {
             if (logger != null) {
-                logger.closeLog();
+                closeLog(logger);
             }
         }
 
@@ -372,7 +374,7 @@ public class SecureLoggerTestCase {
             logger.logMessage("Here I am again".getBytes());
         } finally {
             if (logger != null) {
-                logger.closeLog();
+                closeLog(logger);
             }
         }
 
@@ -396,7 +398,7 @@ public class SecureLoggerTestCase {
             logger.logMessage("Hello again".getBytes());
         } finally {
             if (logger != null) {
-                logger.closeLog();
+                closeLog(logger);
             }
         }
 
@@ -415,7 +417,7 @@ public class SecureLoggerTestCase {
             logger.logMessage("Hello again".getBytes());
         } finally {
             if (logger != null) {
-                logger.closeLog();
+                closeLog(logger);
             }
         }
 
@@ -533,6 +535,17 @@ public class SecureLoggerTestCase {
         }
     }
 
+    private void closeLog(SecureLogger logger) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(1);
+        logger.closeLog(new ClosedCallback() {
+            @Override
+            public void closed() {
+                latch.countDown();
+            }
+        });
+        latch.await();
+    }
+
     private static class SystemOutOutputStream extends OutputStream {
 
         @Override
@@ -540,6 +553,5 @@ public class SecureLoggerTestCase {
             System.out.write(b);
             System.out.flush();
         }
-
     }
 }
