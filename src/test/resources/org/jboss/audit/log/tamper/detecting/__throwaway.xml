@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--  Simple  -->
+<audit-log enabled="true" read-only="true">
+   <simple path="xxx" relative-to="yyy"/>
+</audit-log>
+
+<!--  Simple to syslog -->
+<audit-log enabled="true" read-only="true">
+   <simple syslog="true"/>
+</audit-log>
+
+<!-- 'Secure' -->
+<audit-log enabled="true" read-only="true">
+   <secure path="zzz" relative-to="xxx" encrypt-log-records="true">
+      <encrypting-keystore name="encrypting" definition="encrypting" key-alias="www.example.com" store-password="password" key-password="pwd" type="jks" path="xxx.jks" relative-to="xxx"/>
+      <signing-keystore name="encrypting" definition="encrypting" key-alias="www.example.com" store-password="password" key-password="pwd" type="jks" path="yyy.jks" relative-to="xxx"/>
+      <viewing-certificate  path="yyy.cer" relative-to="xxx"/>
+      <hash-algorithm name="SHA1"/>
+      <log-file-root path="zzz" relative-to="xxx"/>
+      <trusted-location path="ccc" relative-to="xxx"/>
+   </secure>
+</audit-log>
+
+<!-- 'Secure' to syslog -->
+<audit-log enabled="true" read-only="true">
+   <secure syslog="true">
+      <encrypting-keystore name="encrypting" definition="encrypting" key-alias="www.example.com" store-password="password" key-password="pwd" type="jks" path="xxx.jks" relative-to="xxx"/>
+      <signing-keystore name="encrypting" definition="encrypting" key-alias="www.example.com" store-password="password" key-password="pwd" type="jks" path="yyy.jks" relative-to="xxx"/>
+      <viewing-certificate  path="yyy.cer" relative-to="xxx"/>
+      <hash-algorithm name="SHA1"/>
+      <log-file-root path="zzz" relative-to="xxx"/>
+      <trusted-location path="ccc" relative-to="xxx"/>
+   </secure>
+</audit-log>
+
+
+<audit-log enabled="true" read-only="true">
+   <simple />
+   <file-appender path="xxx" relative-to="xxx"/>
+   <syslog-appender name="xxx"/>
+</audit-log>
+
+<audit-log enabled="true" read-only="true">
+   <secure>
+      <encrypting-keystore name="encrypting" definition="encrypting" key-alias="www.example.com" store-password="password" key-password="pwd" type="jks" path="xxx.jks" relative-to="xxx"/>
+      <signing-keystore name="encrypting" definition="encrypting" key-alias="www.example.com" store-password="password" key-password="pwd" type="jks" path="yyy.jks" relative-to="xxx"/>
+      <viewing-certificate  path="yyy.cer" relative-to="xxx"/>
+      <hash-algorithm name="SHA1"/>
+      <trusted-location path="ccc" relative-to="xxx"/>
+   </secure>
+   <file-appender path="xxx" relative-to="xxx"/>
+   <syslog-appender name="xxx"/>
+</audit-log>

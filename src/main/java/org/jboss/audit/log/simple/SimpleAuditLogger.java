@@ -19,45 +19,27 @@
  * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
  */
-package org.jboss.audit.log.tamper.detecting;
+package org.jboss.audit.log.simple;
 
 import java.io.File;
 
-import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
+import org.jboss.audit.log.AuditLogger;
+import org.jboss.audit.log.LogWriter;
 
 /**
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-class SecureLoggerImpl implements SecureLogger {
-    private final File logFileDir;
-    private final LogWriter logWriter;
+class SimpleAuditLogger extends AuditLogger {
 
-    private SecureLoggerImpl(File logFileDir, LogWriter logWriter) {
-        this.logFileDir = logFileDir;
-        this.logWriter = logWriter;
+    private SimpleAuditLogger(LogWriter<?> logWriter, int heartbeatIntervalSeconds) {
+        super(logWriter, heartbeatIntervalSeconds);
     }
 
-    static SecureLogger create(ServerKeyManager securityFacade, File logFileDir, TrustedLocation trustedLocation, LogInfo lastLogInfo, boolean encryptLogMessages) {
-        LogWriter writer = LogWriter.create(securityFacade, logFileDir, trustedLocation, lastLogInfo, encryptLogMessages);
-        SecureLoggerImpl logger = new SecureLoggerImpl(logFileDir, writer);
+    static SimpleAuditLogger create(File logFileDir, int heartbeatIntervalSeconds) {
+        SimpleAuditLogWriter logWriter = SimpleAuditLogWriter.create(logFileDir);
+        SimpleAuditLogger logger = new SimpleAuditLogger(logWriter, heartbeatIntervalSeconds);
         logger.initialize();
         return logger;
-    }
-
-    private void initialize() {
-        Thread t = new Thread(logWriter, "audit-log-writer");
-        t.setDaemon(false);
-        t.start();
-    }
-
-    @Override
-    public void logMessage(byte[] message) {
-        logWriter.logMessage(message);
-    }
-
-    @Override
-    public void closeLog(ClosedCallback closedCallback) {
-        logWriter.closeLog(closedCallback);
     }
 }

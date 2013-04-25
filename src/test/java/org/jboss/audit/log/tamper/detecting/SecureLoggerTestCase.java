@@ -42,8 +42,9 @@ import javax.crypto.spec.PBEParameterSpec;
 
 import junit.framework.Assert;
 
+import org.jboss.audit.log.AuditLogger;
+import org.jboss.audit.log.LogFileNameUtil;
 import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
-import org.jboss.audit.log.tamper.detecting.SecureLogger.ClosedCallback;
 import org.jboss.audit.log.tamper.detecting.ServerKeyManager.EncryptingKeyPairInfo;
 import org.jboss.audit.log.tamper.detecting.ServerKeyManager.SigningKeyPairInfo;
 import org.jboss.audit.log.tamper.detecting.ServerKeyManager.ViewingCertificateInfo;
@@ -114,13 +115,13 @@ public class SecureLoggerTestCase {
         } catch (RecoverableException expected) {
         }
 
-        SecureLogger logger = createLogger(RecoverAction.REBUILD_TRUSTED_LOCATION);
+        AuditLogger logger = createLogger(RecoverAction.REBUILD_TRUSTED_LOCATION);
         closeLog(logger);
     }
 
     @Test
     public void testMissingCurrentLogFile() throws Exception {
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger();
             Assert.fail("Should have failed");
@@ -168,7 +169,7 @@ public class SecureLoggerTestCase {
 
     @Test
     public void testInitializeSecureLogger() throws Exception {
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger();
             Assert.fail("Should have failed");
@@ -201,7 +202,7 @@ public class SecureLoggerTestCase {
         //This tests recovery from a crash after the full log was written but before the trusted
         //location could be updated with the signature sequence number
         overrideTestDirAndTrusted("system-crash-logs/full-log-written-no-trustedlocation");
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger();
             Assert.fail("Should have failed");
@@ -217,7 +218,7 @@ public class SecureLoggerTestCase {
         //This tests recovery from a crash just before the final signature record was written.
         //The log file and the trusted location are in sync
         overrideTestDirAndTrusted("system-crash-logs/before-signature");
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger();
             Assert.fail("Should have failed");
@@ -233,7 +234,7 @@ public class SecureLoggerTestCase {
         //This tests recovery from a crash just before the final signature record was written.
         //The last update to the trusted location did not happen
         overrideTestDirAndTrusted("system-crash-logs/before-signature-no-trustedlocation");
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger();
             Assert.fail("Should have failed");
@@ -256,7 +257,7 @@ public class SecureLoggerTestCase {
         //The last update to the trusted location did not happen
         //Here we try to fix everything in one go
         overrideTestDirAndTrusted("system-crash-logs/before-signature-no-trustedlocation");
-        SecureLogger logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION, RecoverAction.REPAIR_MISSING_SIGNATURE);
+        AuditLogger logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION, RecoverAction.REPAIR_MISSING_SIGNATURE);
         closeLog(logger);
     }
 
@@ -265,7 +266,7 @@ public class SecureLoggerTestCase {
         //This tests recovery from a crash before the final accumulated hash and signature records are written
         //The log file and the trusted location are in sync
         overrideTestDirAndTrusted("system-crash-logs/during-logging");
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger();
             Assert.fail("Should have failed");
@@ -282,7 +283,7 @@ public class SecureLoggerTestCase {
         //This tests recovery from a crash before the final accumulated hash and signature records are written
         //The last update to the trusted location did not happen
         overrideTestDirAndTrusted("system-crash-logs/during-logging-no-trustedlocation");
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger();
             Assert.fail("Should have failed");
@@ -306,14 +307,14 @@ public class SecureLoggerTestCase {
         //The last update to the trusted location did not happen
         //Here we try to fix everything in one go
         overrideTestDirAndTrusted("system-crash-logs/during-logging-no-trustedlocation");
-        SecureLogger logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION, RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH);
+        AuditLogger logger = createLogger(RecoverAction.REPAIR_TRUSTED_LOCATION, RecoverAction.REPAIR_MISSING_ACCUMULATED_HASH);
         closeLog(logger);
     }
 
 //    @Test
 //    public void testSetupLogForCrash() throws Exception {
 //        //Just here to create a log in a debugger for use in the crashed tests
-//        SecureLogger logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
+//        AuditLogger logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
 //        logger.logMessage("Hello".getBytes());
 //        logger.logMessage("Hello2".getBytes());
 //        closeLog(logger);
@@ -322,7 +323,7 @@ public class SecureLoggerTestCase {
 
     @Test
     public void testVerifyGoodLogFile() throws Exception {
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
             logger.logMessage("Hello".getBytes());
@@ -341,7 +342,7 @@ public class SecureLoggerTestCase {
 
     @Test
     public void testVerifyLogFileChain() throws Exception {
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
             logger.logMessage("Hello".getBytes());
@@ -391,7 +392,7 @@ public class SecureLoggerTestCase {
     public void testViewLog() throws Exception {
         //The key thing here is that the viewer cannot verify the log file but it only needs the viewing p12 private key
         //matching the viewing certificate
-        SecureLogger logger = null;
+        AuditLogger logger = null;
         try {
             logger = createLogger(RecoverAction.CREATE_TRUSTED_LOCATION);
             logger.logMessage("Hello".getBytes());
@@ -411,7 +412,7 @@ public class SecureLoggerTestCase {
         //The key thing here is that the viewer cannot verify the log file but it only needs the viewing p12 private key
         //matching the viewing certificate
         SecureLoggerBuilder builder = createLogBuilder(true, RecoverAction.CREATE_TRUSTED_LOCATION);
-        SecureLogger logger = builder.buildLogger();
+        AuditLogger logger = builder.buildLogger();
         try {
             logger.logMessage("Hello".getBytes());
             logger.logMessage("Hello again".getBytes());
@@ -458,13 +459,13 @@ public class SecureLoggerTestCase {
         Assert.assertTrue(trusted.exists());
     }
 
-    private SecureLogger createLogger(RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
+    private AuditLogger createLogger(RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
         SecureLoggerBuilder builder = createLogBuilder(false, recoverActions);
         return builder.buildLogger();
     }
 
     private SecureLoggerBuilder createLogBuilder(boolean encrypted, RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
-        SecureLoggerBuilder builder = SecureLoggerBuilder.Factory.createBuilder()
+        SecureLoggerBuilder builder = SecureLoggerBuilder.createBuilder(testLogDir)
                 .signingStoreBuilder()
                     .setPath(getResourceFile("test-sign.keystore"))
                     .setKeyName("audit-sign")
@@ -479,7 +480,6 @@ public class SecureLoggerTestCase {
                     .setKeyPassword("changeit4")
                     .done()
                 .setViewingCertificatePath(getResourceFile("viewing-cert.cer"))
-                .setLogFileRoot(testLogDir)
                 .setTrustedLocation(trusted);
 
         if (encrypted) {
@@ -535,9 +535,10 @@ public class SecureLoggerTestCase {
         }
     }
 
-    private void closeLog(SecureLogger logger) throws InterruptedException {
+    private void closeLog(AuditLogger logger) throws InterruptedException {
         final CountDownLatch latch = new CountDownLatch(1);
-        logger.closeLog(new ClosedCallback() {
+        logger.closeLog(new AuditLogger.ClosedCallback() {
+
             @Override
             public void closed() {
                 latch.countDown();

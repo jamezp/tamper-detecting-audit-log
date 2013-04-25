@@ -30,6 +30,8 @@ import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.util.Enumeration;
 
+import org.jboss.audit.log.LogFileNameUtil;
+
 /**
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>

@@ -23,20 +23,7 @@ Re-enter new password: changeit4
 
 viewing certificate and private key (viewing-cert.cer and viewing-key.p12) 
 ======================================
-$keytool  -genkeypair -alias audit-viewing -keyalg RSA -validity 365 -keystore test-viewing.keystore  -keysize 2048
-Enter keystore password: changeit5
-Re-enter new password: changeit5
-....
-Enter key password for <audit-sign>
-   (RETURN if same as keystore password): changeit6  
-Re-enter new password: changeit6
 
-$keytool -export -alias audit-viewing -keystore test-viewing.keystore  -rfc -file test-viewing.cer
-Enter keystore password:  changeit5
-Certificate stored in file <test-viewing.cer>
-
-
-XXXXXXXXXXXXXXXXXXXX
 $openssl genrsa -out viewing-key.key 2048
 
 $openssl req -new -key viewing-key.key -out viewing-key.csr 

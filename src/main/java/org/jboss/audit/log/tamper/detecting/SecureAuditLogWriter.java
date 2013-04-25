@@ -29,19 +29,19 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 
+import org.jboss.audit.log.LogFileNameUtil;
+import org.jboss.audit.log.LogWriter;
+import org.jboss.audit.log.LogWriterRecord;
 import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
+import org.jboss.audit.log.tamper.detecting.SecureAuditLogWriter.SecureAuditLogWriterRecord;
 
-class LogWriter implements Runnable {
+class SecureAuditLogWriter implements LogWriter<SecureAuditLogWriterRecord> {
     private final ServerKeyManager keyManager;
-    private final BlockingQueue<LogWriterRecord> recordQueue = new ArrayBlockingQueue<LogWriterRecord>(1000);
     private final LogFileNameUtil logFileNameUtil;
     private final byte[] secureRandomBytes = new byte[IoUtils.SECURE_RANDOM_BYTES_LENGTH];
     private final TrustedLocation trustedLocation;
@@ -54,12 +54,7 @@ class LogWriter implements Runnable {
     private volatile SecretKey symmetricKeyInLog = null;
     private volatile int lastRecordLength;
 
-    //Thread status fields, guarded by 'this'
-    private Status loggerStatus = Status.RUNNING;
-    private int queuedMessages;
-    private SecureLogger.ClosedCallback closedCallback;
-
-    private LogWriter(ServerKeyManager keyManager, File logFileDir, TrustedLocation trustedLocation, boolean encryptLogMessages) {
+    private SecureAuditLogWriter(ServerKeyManager keyManager, File logFileDir, TrustedLocation trustedLocation, boolean encryptLogMessages) {
         this.keyManager = keyManager;
         logFileNameUtil = new LogFileNameUtil(logFileDir);
         this.trustedLocation = trustedLocation;
@@ -67,7 +62,7 @@ class LogWriter implements Runnable {
         this.encryptLogMessages = encryptLogMessages;
     }
 
-    private LogWriter(ServerKeyManager keyManager, File logFile, TrustedLocation trustedLocation, AccumulativeDigest accumulativeDigest, int sequenceNumber, int lastRecordLength, RandomAccessFile raf) {
+    private SecureAuditLogWriter(ServerKeyManager keyManager, File logFile, TrustedLocation trustedLocation, AccumulativeDigest accumulativeDigest, int sequenceNumber, int lastRecordLength, RandomAccessFile raf) {
         this.keyManager = keyManager;
         this.currentLogFile = logFile;
         this.trustedLocation = trustedLocation;
@@ -79,10 +74,9 @@ class LogWriter implements Runnable {
         this.encryptLogMessages = false;
     }
 
-    static LogWriter create(ServerKeyManager keyManager, File logFileDir, TrustedLocation trustedLocation, LogInfo lastLogInfo, boolean encryptLogMessages) {
-        LogWriter writer = new LogWriter(keyManager, logFileDir, trustedLocation, encryptLogMessages);
+    static SecureAuditLogWriter create(ServerKeyManager keyManager, File logFileDir, TrustedLocation trustedLocation, LogInfo lastLogInfo, boolean encryptLogMessages) {
+        SecureAuditLogWriter writer = new SecureAuditLogWriter(keyManager, logFileDir, trustedLocation, encryptLogMessages);
         writer.createNewLogFile(lastLogInfo);
-        writer.loggerStatus = Status.RUNNING;
         return writer;
     }
 
@@ -97,72 +91,10 @@ class LogWriter implements Runnable {
             IoUtils.safeClose(raf);
             throw new RuntimeException(t);
         }
-        LogWriter logWriter = new LogWriter(keyManager, logFile, trustedLocation, accumulativeDigest, sequenceNumber, lastRecordLength, raf);
+        SecureAuditLogWriter logWriter = new SecureAuditLogWriter(keyManager, logFile, trustedLocation, accumulativeDigest, sequenceNumber, lastRecordLength, raf);
         return logWriter.createFixingLogWriter();
     }
 
-    void logMessage(byte[] message) {
-        synchronized (this) {
-            if (loggerStatus == Status.SHUTDOWN) {
-                throw new IllegalStateException("Logger was shut down");
-            } else if (loggerStatus == Status.ERROR) {
-                return;
-            }
-            queuedMessages++;
-        }
-        recordQueue.add(new LogWriterRecord(message, RecordType.CLIENT_LOG_DATA));
-    }
-
-    synchronized void closeLog(SecureLogger.ClosedCallback closedCallback) {
-        loggerStatus = Status.SHUTDOWN;
-        this.closedCallback = closedCallback;
-    }
-
-    @Override
-    public void run() {
-        boolean interrupted = false;
-        EncryptionType encryptionType = encryptLogMessages ? EncryptionType.SYMMETRIC : EncryptionType.NONE;
-        try {
-            while (true) {
-                try {
-                    SecureLogger.ClosedCallback closedCallback = null;
-                    boolean shouldShutdown = false;
-                    synchronized (LogWriter.this) {
-                        if (loggerStatus == Status.SHUTDOWN && queuedMessages == 0) {
-                            shouldShutdown = true;
-                            closedCallback = this.closedCallback;
-                        }
-                    }
-                    if (shouldShutdown) {
-                        logMessage(accumulativeDigest.getAccumulativeHash(), RecordType.ACCUMULATED_HASH, EncryptionType.NONE);
-                        writeSignature(RecordType.LOG_FILE_SIGNATURE);
-                        trustedLocation.write(logFile, currentSequenceNumber, accumulativeDigest.getAccumulativeHash());
-                        closedCallback.closed();
-                        break;
-                    }
-
-                    LogWriterRecord logRecord = recordQueue.poll(1, TimeUnit.SECONDS);
-                    if (logRecord != null) {
-                        synchronized (LogWriter.this) {
-                            queuedMessages--;
-                        }
-                        logMessage(logRecord.getData(), logRecord.getType(), encryptionType);
-                    } else {
-                        logMessage(new byte[0], RecordType.HEARTBEAT, EncryptionType.NONE);
-                    }
-                } catch (InterruptedException e) {
-                    interrupted = true;
-                }
-            }
-        } catch(Exception e) {
-            loggerStatus = Status.ERROR;
-        } finally {
-            IoUtils.safeClose(currentRandomAccessFile);
-            if (interrupted) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
 
     private FixingLogWriter createFixingLogWriter() {
         return new FixingLogWriter() {
@@ -195,7 +127,7 @@ class LogWriter implements Runnable {
         currentSequenceNumber = 0;
         currentLogFile = logFile;
         try {
-            currentRandomAccessFile = new RandomAccessFile(logFile, "rw");
+            currentRandomAccessFile = new RandomAccessFile(logFile, "rwd");
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
         }
@@ -372,18 +304,37 @@ class LogWriter implements Runnable {
         void writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter();
     }
 
-
-    enum Status {
-        RUNNING,
-        SHUTDOWN,
-        ERROR;
+    @Override
+    public SecureAuditLogWriterRecord createLogRecord(byte[] message) {
+        return new SecureAuditLogWriterRecord(message, RecordType.CLIENT_LOG_DATA);
     }
 
-    class LogWriterRecord {
+    @Override
+    public void logRecord(SecureAuditLogWriterRecord record) {
+        logMessage(record.getData(), record.getType(), encryptLogMessages ? EncryptionType.SYMMETRIC : EncryptionType.NONE);
+    }
+
+    @Override
+    public void writeHeartbeat() {
+        logMessage(new byte[0], RecordType.HEARTBEAT, EncryptionType.NONE);
+    }
+
+    @Override
+    public void cycleLog() {
+        //TOOD
+    }
+
+    @Override
+    public void close() {
+        logMessage(accumulativeDigest.getAccumulativeHash(), RecordType.ACCUMULATED_HASH, EncryptionType.NONE);
+        writeSignature(RecordType.LOG_FILE_SIGNATURE);
+    }
+
+    static class SecureAuditLogWriterRecord implements LogWriterRecord {
         private final byte[] data;
         private final RecordType type;
 
-        LogWriterRecord(byte[] data, RecordType type) {
+        SecureAuditLogWriterRecord(byte[] data, RecordType type) {
             this.data = data;
             this.type = type;
         }

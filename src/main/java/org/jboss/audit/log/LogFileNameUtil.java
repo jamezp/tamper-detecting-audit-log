@@ -19,7 +19,7 @@
  * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
  */
-package org.jboss.audit.log.tamper.detecting;
+package org.jboss.audit.log;
 
 import java.io.File;
 import java.io.FilenameFilter;
@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-class LogFileNameUtil {
+public class LogFileNameUtil {
     private static final Pattern PATTERN = Pattern.compile("audit.*-.*-.*.dat");
 
     private final static AtomicInteger lastLogSequence = new AtomicInteger(-1);
@@ -43,11 +43,11 @@ class LogFileNameUtil {
     private final File logFileDir;
 
     /** Creates a new instance of LogFilenameClass */
-    LogFileNameUtil(File logFileDir) {
+    public LogFileNameUtil(File logFileDir) {
         this.logFileDir = logFileDir;
     }
 
-    File generateNewLogFileName() {
+    public File generateNewLogFileName() {
         Calendar today = new GregorianCalendar(TimeZone.getTimeZone("GMT+1"));
         StringBuffer tmp = dateFormat.format(today.getTime(), new StringBuffer(), new java.text.FieldPosition(0));
         int last = lastLogSequence.incrementAndGet();
@@ -55,7 +55,7 @@ class LogFileNameUtil {
         return new File(logFileDir, newFileName);
     }
 
-    File getPreviousLogFilename(String logFilename) {
+    public File getPreviousLogFilename(String logFilename) {
         String[] files = logFileDir.list(new FilenameFilter() {
             @Override
             public boolean accept(File dir, String name) {
@@ -111,7 +111,7 @@ class LogFileNameUtil {
         return Integer.parseInt(sequenceStr);
     }
 
-    File findLatestLogFileName() {
+    public File findLatestLogFileName() {
         return getPreviousLogFilename(null);
     }
 

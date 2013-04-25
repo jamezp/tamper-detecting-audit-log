@@ -36,6 +36,7 @@ import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequenceGenerator;
+import org.jboss.audit.log.LogFileNameUtil;
 import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
 import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
 import org.jboss.audit.log.tamper.detecting.RecoverableErrorContext.RecoverCallback;
@@ -180,7 +181,7 @@ class TrustedLocation {
                             @Override
                             public Void repair() {
                                 try {
-                                    LogWriter.createForFixing(keyManager, lastLogInfo.getLogFile(), TrustedLocation.this, lastLogInfo.getAccumulativeDigest(),
+                                    SecureAuditLogWriter.createForFixing(keyManager, lastLogInfo.getLogFile(), TrustedLocation.this, lastLogInfo.getAccumulativeDigest(),
                                             lastSequenceNumber, lastLogInfo.getLastRecordLength())
                                             .writeMissingAccumulatedHashAndSignatureRecordsAndCloseWriter();
                                 } catch (IOException e) {
@@ -196,7 +197,7 @@ class TrustedLocation {
                             @Override
                             public Void repair() {
                                 try {
-                                    LogWriter.createForFixing(keyManager, lastLogInfo.getLogFile(), TrustedLocation.this, lastLogInfo.getAccumulativeDigest(),
+                                    SecureAuditLogWriter.createForFixing(keyManager, lastLogInfo.getLogFile(), TrustedLocation.this, lastLogInfo.getAccumulativeDigest(),
                                             lastSequenceNumber, lastLogInfo.getLastRecordLength())
                                             .writeMissingSignatureRecordAndCloseWriter();
                                 } catch (IOException e) {

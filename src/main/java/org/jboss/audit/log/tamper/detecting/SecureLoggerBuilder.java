@@ -22,16 +22,38 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+import org.jboss.audit.log.AuditLogger;
+import org.jboss.audit.log.AuditLoggerBuilder;
+import org.jboss.audit.log.LogFileNameUtil;
+import org.jboss.audit.log.tamper.detecting.LogReader.LogInfo;
 import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAction;
+import org.jboss.audit.log.tamper.detecting.ServerKeyManager.EncryptingKeyPairInfo;
+import org.jboss.audit.log.tamper.detecting.ServerKeyManager.SigningKeyPairInfo;
 
-/**
- *
- * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
- */
-public interface SecureLoggerBuilder {
+public class SecureLoggerBuilder extends AuditLoggerBuilder{
+
+    private EncryptingKeyPairInfo encryptingKeyPair;
+    private SigningKeyPairInfo signingKeyPair;
+    private ServerKeyManager.ViewingCertificateInfo viewingStore;
+    private File trustedLocationFile;
+    private Set<RecoverAction> repairActions = new HashSet<RecoverAction>();
+    private boolean encryptLogMessages;
+
+    private SecureLoggerBuilder(File logFileDir) {
+        super(logFileDir);
+    }
+
+    public static SecureLoggerBuilder createBuilder(File logFileDir) {
+        return new SecureLoggerBuilder(logFileDir);
+    }
 
     /**
      * Get the builder for the keystore information for the key pair used to encrypt/decrypt
@@ -39,7 +61,9 @@ public interface SecureLoggerBuilder {
      *
      * @return the builder
      */
-    EncryptingKeyPairBuilder encryptingStoreBuilder();
+    public EncryptingKeyPairBuilder encryptingStoreBuilder() {
+        return new EncryptingKeyPairBuilder();
+    }
 
     /**
      * Get the builder for the keystore information for the key pair used to sign the
@@ -47,7 +71,9 @@ public interface SecureLoggerBuilder {
      *
      * @return the builder
      */
-    SigningKeyPairBuilder signingStoreBuilder();
+    public SigningKeyPairBuilder signingStoreBuilder() {
+        return new SigningKeyPairBuilder();
+    }
 
     /**
      * Set the path for the certificate to view the log
@@ -55,15 +81,10 @@ public interface SecureLoggerBuilder {
      * @param path the path of the viewing certificate
      * @return this builder
      */
-    SecureLoggerBuilder setViewingCertificatePath(File path) throws KeyStoreInitializationException ;
-
-    /**
-     * Set the root directory for the log files
-     *
-     * @param file the log file root directory
-     * @return this builder
-     */
-    SecureLoggerBuilder setLogFileRoot(File file);
+    public SecureLoggerBuilder setViewingCertificatePath(File path) throws KeyStoreInitializationException  {
+        viewingStore = ServerKeyManager.ViewingCertificateInfo.create(path);
+        return this;
+    }
 
     /**
      * Set the trusted location maintaing the last log file, accumulated hash and sequence number
@@ -71,80 +92,240 @@ public interface SecureLoggerBuilder {
      * @param file the trusted location path
      * @return this builder
      */
-    SecureLoggerBuilder setTrustedLocation(File file);
+    public SecureLoggerBuilder setTrustedLocation(File file) {
+        trustedLocationFile = file;
+        return this;
+    }
 
     /**
      * Add a recover action to recover from a {@link RecoverableException} when calling {@link #buildLogger()}
      *
      * @return this builder
      */
-    SecureLoggerBuilder addRecoverAction(RecoverAction recoverAction);
+    public SecureLoggerBuilder addRecoverAction(RecoverAction repairAction) {
+        repairActions.add(repairAction);
+        return this;
+    }
 
     /**
      * If called the logger will encrypt the user log messages
      *
      * @return this builder
      */
-    SecureLoggerBuilder setEncryptLogMessages();
+    public SecureLoggerBuilder setEncryptLogMessages() {
+        encryptLogMessages = true;
+        return this;
+    }
 
-    /**
-     * Builds the logger
-     *
-     * @return a secure logger
-     * @throws KeyStoreInitializationException if there was a problem loading any of the keystores and certificates
-     * @throws RecoverableException if there were some problems relating the current log to the trusted location
-     * @throws ValidationException if there were some problems checking the log
-     */
-    SecureLogger buildLogger() throws KeyStoreInitializationException, RecoverableException, ValidationException;
 
-    /**
-     * Lists the log files in the log file root
-     *
-     * @return the list of the log files sorted from newest to oldest
-     */
-    List<File> listLogFiles();
+    public AuditLogger buildLogger() throws KeyStoreInitializationException, RecoverableException, ValidationException {
+        RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
+        ServerKeyManager keyManager = new ServerKeyManager(encryptingKeyPair, signingKeyPair, viewingStore);
+        TrustedLocation trustedLocation;
+        LogInfo lastLogInfo;
+        do {
+            trustedLocation = TrustedLocation.create(recoverableContext, keyManager, logFileDir, trustedLocationFile);
+            lastLogInfo = null;
+            if (trustedLocation.getCurrentInspectionLogFile() != null) {
+                recoverableContext.resetRecheck();
+                LogReader reader = new LogReader(keyManager, trustedLocation.getCurrentInspectionLogFile());
+                lastLogInfo = reader.checkLogFile();
+                trustedLocation.checkLastLogRecord(recoverableContext, lastLogInfo);
+            }
+        } while (recoverableContext.isRecheck());
+        //TODO make configurable
+        int heartbeat = 1;
+        AuditLogger secureLogger = SecureAuditLogger.create(keyManager, logFileDir, trustedLocation, lastLogInfo, encryptLogMessages, heartbeat);
+        return secureLogger;
+    }
 
-    /**
-     * Verify/read a single log file.
-     *
-     * @param outputStream the output stream to write the output to
-     * @param bodyOutputter interprets the body bytes for each log record. If {@code null} the body will not be interpreted
-     * @param file the file to inspect. If {@code null} it will inspect the most recent file in the log file root directory
-     *
-     */
-    void verifyLogFile(OutputStream outputStream, LogRecordBodyOutputter bodyOutputter, File file) throws KeyStoreInitializationException;
+    public void verifyLogFile(OutputStream outputStream, LogRecordBodyOutputter bodyOutputter, File file) throws KeyStoreInitializationException {
+        verifyLogFileChain(outputStream, bodyOutputter, file, 0);
+    }
 
-    /**
-     * Verify/read a chain of log files.
-     *
-     * @param outputStream the output stream to write the output to
-     * @param bodyOutputter interprets the body bytes for each log record. If {@code null} the body will not be interpreted
-     * @param file the file to inspect. If {@code null} it will inspect the most recent file in the log file root directory
-     * @param count the number of older files to inspect. {@code 0} means only inspect the current, and {@code -1} means inspect all the way to the end.
-     */
-    void verifyLogFileChain(OutputStream outputStream, LogRecordBodyOutputter bodyOutputter, File file, int count) throws KeyStoreInitializationException;
 
-    interface SigningKeyPairBuilder {
-        SigningKeyPairBuilder setPath(File location);
-        SigningKeyPairBuilder setStorePassword(String password);
-        SigningKeyPairBuilder setKeyPassword(String password);
-        SigningKeyPairBuilder setKeyName(String name);
-        SigningKeyPairBuilder setHashAlgorithm(HashAlgorithm algorithm);
-        SecureLoggerBuilder done();
+    public void verifyLogFileChain(final OutputStream outputStream, final LogRecordBodyOutputter bodyOutputter, final File file, final int count)
+            throws KeyStoreInitializationException {
+        LogFileNameUtil logFileNameUtil = new LogFileNameUtil(logFileDir);
+        final File lastLogFile = logFileNameUtil.getPreviousLogFilename(null);
+        final File inspectFile;
+        if (file == null) {
+            inspectFile = lastLogFile;
+            if (inspectFile == null) {
+                throw new IllegalStateException("Could not find any log files in " + logFileDir);
+            }
+        } else {
+            inspectFile = file;
+        }
+
+        final boolean isLast = lastLogFile.getName().equals(inspectFile.getName());
+
+        ServerKeyManager keyManager = new ServerKeyManager(encryptingKeyPair, signingKeyPair, viewingStore);
+        LogReader reader = new LogReader(keyManager, inspectFile);
+        RecoverableErrorContext recoverableContext = new RecoverableErrorContext(repairActions);
+        TrustedLocation trustedLocation = null;
+        if (isLast) {
+            try {
+                do {
+                    trustedLocation = TrustedLocation.create(recoverableContext, keyManager, logFileDir, trustedLocationFile);
+                } while (recoverableContext.isRecheck());
+            }catch (RecoverableException e) {
+                writeMessageToOutputStream(outputStream, "Error: " + e.getMessage() + "\n");
+            }
+        }
+
+        //Always read the file in question
+        LogInfo logInfo = null;
+        try {
+            logInfo = reader.verifyLogFile(outputStream, bodyOutputter);
+        } catch (ValidationException e) {
+            //Should not happen
+            throw new IllegalStateException(e);
+        }
+
+        if (trustedLocation != null) {
+            try {
+                do {
+                    trustedLocation.checkLastLogRecord(recoverableContext, logInfo);
+                } while (recoverableContext.isRecheck());
+            } catch (RecoverableException e) {
+                writeMessageToOutputStream(outputStream, "Error: " + e.getMessage() + "\n");
+            } catch (ValidationException e) {
+                IoUtils.printStackTraceToOutputStream(e, outputStream);
+            }
+        }
+
+        writeMessageToOutputStream(outputStream, "\n**** Finished inspection of " + logInfo.getLogFile().getName() + " ****\n");
+
+        //Now check the chain if requested
+        int current = count;
+        while (current > 0 || current ==-1) {
+            if (current > 0) {
+                current--;
+            }
+            if (logInfo.getLastFileName() == null) {
+                writeMessageToOutputStream(outputStream, "\n**** The last file name in " + logInfo.getLogFile().getName() + " is null. End of chain. ****\n");
+                break;
+            }
+
+            File previousLogFile = new File(logFileDir, logInfo.getLastFileName());
+            if (!previousLogFile.exists()) {
+                writeMessageToOutputStream(outputStream, "Error: The last log file in " + logInfo.getLogFile().getName() + " was given as " + logInfo.getLastFileName() + ". That file does not exist. Searching for previous file to continue verification of chain before that file\n");
+                previousLogFile = logFileNameUtil.getPreviousLogFilename(logInfo.getLogFile().getName());
+                if (previousLogFile != null) {
+                    writeMessageToOutputStream(outputStream, "\n*** Continuing verification with " + previousLogFile.getName() + " ***\n");
+                } else {
+                    writeMessageToOutputStream(outputStream, "Error: No earlier log files than " + logInfo.getLogFile().getName() + " could be found in " + logFileDir + "\n");
+                    break;
+                }
+            } else {
+                writeMessageToOutputStream(outputStream, "\n***  inspecting the previous log file " + previousLogFile.getName() + "***\n");
+            }
+
+
+            LogInfo lastInspected = logInfo;
+            try {
+
+                reader = new LogReader(keyManager, previousLogFile);
+                logInfo = reader.verifyLogFile(outputStream, bodyOutputter);
+            } catch (ValidationException e) {
+                //Should not happen
+                throw new IllegalStateException(e);
+            }
+
+            if (logInfo.getLastFileName() != null) {
+                if (!Arrays.equals(lastInspected.getLastFileHash(), logInfo.getAccumulatedHash())){
+                    writeMessageToOutputStream(outputStream, "Error: The last file hash recorded in " + logInfo.getLogFile().getName() + " is different from the accumulated hash in " + logInfo.getLogFile().getName() + "\n");
+                }
+                if (!Arrays.equals(lastInspected.getLastFileSignature(), logInfo.getSignature())) {
+                    writeMessageToOutputStream(outputStream, "Error: The last file signature recorded in " + logInfo.getLogFile().getName() + " is different from the signature in " + logInfo.getLogFile().getName() + "\n");
+                }
+            } else {
+                writeMessageToOutputStream(outputStream, "\n**** Finished inspection of " + logInfo.getLogFile().getName() + " ****\n");
+            }
+        }
 
     }
 
-    interface EncryptingKeyPairBuilder {
-        EncryptingKeyPairBuilder setPath(File location);
-        EncryptingKeyPairBuilder setStorePassword(String password);
-        EncryptingKeyPairBuilder setKeyPassword(String password);
-        SigningKeyPairBuilder setKeyName(String name);
-        SecureLoggerBuilder done();
+    private void writeMessageToOutputStream(OutputStream out, String message) {
+        try {
+            out.write(message.getBytes());
+        } catch (IOException ie) {
+            ie.printStackTrace();
+        }
+
     }
 
-    class Factory {
-        public static SecureLoggerBuilder createBuilder() {
-            return new SecureLoggerBuilderImpl();
+    public List<File> listLogFiles() {
+        LogFileNameUtil logFileNameUtil = new LogFileNameUtil(logFileDir);
+        File file = logFileNameUtil.getPreviousLogFilename(null);
+        List<File> files = new ArrayList<File>();
+        if (file != null) {
+            files.add(file);
+            file = logFileNameUtil.getPreviousLogFilename(file.getName());
+            while (file != null) {
+                files.add(file);
+                file = logFileNameUtil.getPreviousLogFilename(file.getName());
+            }
+        }
+        return files;
+    }
+
+    private class AbstractKeyPairBuilder<T extends AbstractKeyPairBuilder<T>> {
+        File keyStorePath;
+        String storePassword;
+        String keyPassword;
+        String keyName;
+
+        public T setPath(File keyStorePath) {
+            assert keyStorePath != null;
+            this.keyStorePath = keyStorePath;
+            return (T)this;
+        }
+
+        public T setStorePassword(String password) {
+            this.storePassword = password;
+            return (T)this;
+        }
+
+        public T setKeyPassword(String password) {
+            this.keyPassword = password;
+            return (T)this;
+        }
+
+        public T setKeyName(String name) {
+            this.keyName = name;
+            return (T)this;
+        }
+
+    }
+
+    public class SigningKeyPairBuilder extends AbstractKeyPairBuilder<SigningKeyPairBuilder>{
+        HashAlgorithm algorithm;
+
+        public SigningKeyPairBuilder setHashAlgorithm(HashAlgorithm algorithm) {
+            this.algorithm = algorithm;
+            return this;
+        }
+
+        SecureLoggerBuilder done() throws KeyStoreInitializationException {
+            try {
+                signingKeyPair = ServerKeyManager.SigningKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName, algorithm);
+            } catch (Exception e) {
+                if (e instanceof RuntimeException) {
+                    throw (RuntimeException) e;
+                }
+                throw new KeyStoreInitializationException(e);
+            }
+
+            return SecureLoggerBuilder.this;
+        }
+    }
+
+    public class EncryptingKeyPairBuilder extends AbstractKeyPairBuilder<EncryptingKeyPairBuilder>{
+        SecureLoggerBuilder done() throws KeyStoreInitializationException {
+            encryptingKeyPair = ServerKeyManager.EncryptingKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName);
+            return SecureLoggerBuilder.this;
         }
     }
 }
