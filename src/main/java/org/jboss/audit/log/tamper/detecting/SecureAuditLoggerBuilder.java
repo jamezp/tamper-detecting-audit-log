@@ -38,7 +38,7 @@ import org.jboss.audit.log.tamper.detecting.RecoverableErrorCondition.RecoverAct
 import org.jboss.audit.log.tamper.detecting.ServerKeyManager.EncryptingKeyPairInfo;
 import org.jboss.audit.log.tamper.detecting.ServerKeyManager.SigningKeyPairInfo;
 
-public class SecureLoggerBuilder extends AuditLoggerBuilder{
+public class SecureAuditLoggerBuilder extends AuditLoggerBuilder<SecureAuditLoggerBuilder> {
 
     private EncryptingKeyPairInfo encryptingKeyPair;
     private SigningKeyPairInfo signingKeyPair;
@@ -47,12 +47,12 @@ public class SecureLoggerBuilder extends AuditLoggerBuilder{
     private Set<RecoverAction> repairActions = new HashSet<RecoverAction>();
     private boolean encryptLogMessages;
 
-    private SecureLoggerBuilder(File logFileDir) {
+    private SecureAuditLoggerBuilder(File logFileDir) {
         super(logFileDir);
     }
 
-    public static SecureLoggerBuilder createBuilder(File logFileDir) {
-        return new SecureLoggerBuilder(logFileDir);
+    public static SecureAuditLoggerBuilder createBuilder(File logFileDir) {
+        return new SecureAuditLoggerBuilder(logFileDir);
     }
 
     /**
@@ -81,7 +81,7 @@ public class SecureLoggerBuilder extends AuditLoggerBuilder{
      * @param path the path of the viewing certificate
      * @return this builder
      */
-    public SecureLoggerBuilder setViewingCertificatePath(File path) throws KeyStoreInitializationException  {
+    public SecureAuditLoggerBuilder setViewingCertificatePath(File path) throws KeyStoreInitializationException  {
         viewingStore = ServerKeyManager.ViewingCertificateInfo.create(path);
         return this;
     }
@@ -92,7 +92,7 @@ public class SecureLoggerBuilder extends AuditLoggerBuilder{
      * @param file the trusted location path
      * @return this builder
      */
-    public SecureLoggerBuilder setTrustedLocation(File file) {
+    public SecureAuditLoggerBuilder setTrustedLocation(File file) {
         trustedLocationFile = file;
         return this;
     }
@@ -102,7 +102,7 @@ public class SecureLoggerBuilder extends AuditLoggerBuilder{
      *
      * @return this builder
      */
-    public SecureLoggerBuilder addRecoverAction(RecoverAction repairAction) {
+    public SecureAuditLoggerBuilder addRecoverAction(RecoverAction repairAction) {
         repairActions.add(repairAction);
         return this;
     }
@@ -112,7 +112,7 @@ public class SecureLoggerBuilder extends AuditLoggerBuilder{
      *
      * @return this builder
      */
-    public SecureLoggerBuilder setEncryptLogMessages() {
+    public SecureAuditLoggerBuilder setEncryptLogMessages() {
         encryptLogMessages = true;
         return this;
     }
@@ -308,7 +308,7 @@ public class SecureLoggerBuilder extends AuditLoggerBuilder{
             return this;
         }
 
-        SecureLoggerBuilder done() throws KeyStoreInitializationException {
+        SecureAuditLoggerBuilder done() throws KeyStoreInitializationException {
             try {
                 signingKeyPair = ServerKeyManager.SigningKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName, algorithm);
             } catch (Exception e) {
@@ -318,14 +318,14 @@ public class SecureLoggerBuilder extends AuditLoggerBuilder{
                 throw new KeyStoreInitializationException(e);
             }
 
-            return SecureLoggerBuilder.this;
+            return SecureAuditLoggerBuilder.this;
         }
     }
 
     public class EncryptingKeyPairBuilder extends AbstractKeyPairBuilder<EncryptingKeyPairBuilder>{
-        SecureLoggerBuilder done() throws KeyStoreInitializationException {
+        SecureAuditLoggerBuilder done() throws KeyStoreInitializationException {
             encryptingKeyPair = ServerKeyManager.EncryptingKeyPairInfo.create(keyStorePath, storePassword, keyPassword, keyName);
-            return SecureLoggerBuilder.this;
+            return SecureAuditLoggerBuilder.this;
         }
     }
 }

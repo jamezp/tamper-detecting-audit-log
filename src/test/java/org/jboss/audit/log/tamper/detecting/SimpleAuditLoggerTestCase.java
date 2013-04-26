@@ -22,6 +22,7 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
+import java.util.Date;
 import java.util.concurrent.CountDownLatch;
 
 import org.jboss.audit.log.AuditLogger;
@@ -57,6 +58,25 @@ public class SimpleAuditLoggerTestCase {
         } finally {
             closeLog(logger);
         }
+    }
+
+    @Test
+    public void testSimpleLoggerWithSyslog() throws Exception {
+        AuditLogger logger =
+                SimpleAuditLoggerBuilder.createBuilder(testLogDir)
+                    .createSyslogAppenderBuilder()
+                        .setAppName("Testing123")
+                        //.setSyslogType(SyslogType.RFC3164) //This is the BSD/Mac version
+                        .done()
+                        .buildLogger();
+
+        try {
+            String msg = "Hello from Kabir " + new Date().toString() + "\n this is a new line";
+            logger.logMessage(msg.getBytes());
+        } finally {
+            closeLog(logger);
+        }
+
     }
 
 

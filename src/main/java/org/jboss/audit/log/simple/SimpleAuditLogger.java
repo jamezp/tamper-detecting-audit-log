@@ -25,6 +25,7 @@ import java.io.File;
 
 import org.jboss.audit.log.AuditLogger;
 import org.jboss.audit.log.LogWriter;
+import org.jboss.audit.log.SyslogAppender;
 
 /**
  *
@@ -36,8 +37,8 @@ class SimpleAuditLogger extends AuditLogger {
         super(logWriter, heartbeatIntervalSeconds);
     }
 
-    static SimpleAuditLogger create(File logFileDir, int heartbeatIntervalSeconds) {
-        SimpleAuditLogWriter logWriter = SimpleAuditLogWriter.create(logFileDir);
+    static SimpleAuditLogger create(File logFileDir, SyslogAppender syslogAppender, int heartbeatIntervalSeconds) {
+        SimpleAuditLogWriter logWriter = SimpleAuditLogWriter.create(logFileDir, syslogAppender);
         SimpleAuditLogger logger = new SimpleAuditLogger(logWriter, heartbeatIntervalSeconds);
         logger.initialize();
         return logger;

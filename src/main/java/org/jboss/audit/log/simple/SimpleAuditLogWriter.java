@@ -29,6 +29,7 @@ import java.io.RandomAccessFile;
 import org.jboss.audit.log.LogFileNameUtil;
 import org.jboss.audit.log.LogWriter;
 import org.jboss.audit.log.LogWriterRecord;
+import org.jboss.audit.log.SyslogAppender;
 import org.jboss.audit.log.simple.SimpleAuditLogWriter.SimpleAuditLogWriterRecord;
 
 /**
@@ -38,16 +39,18 @@ import org.jboss.audit.log.simple.SimpleAuditLogWriter.SimpleAuditLogWriterRecor
 class SimpleAuditLogWriter implements LogWriter<SimpleAuditLogWriterRecord> {
 
     private final LogFileNameUtil logFileNameUtil;
+    private final SyslogAppender syslogAppender;
     private volatile File logFile;
     private volatile RandomAccessFile currentRandomAccessFile;
 
-    private SimpleAuditLogWriter(File logFileDir) {
+    private SimpleAuditLogWriter(File logFileDir, SyslogAppender syslogAppender) {
         logFileNameUtil = new LogFileNameUtil(logFileDir);
+        this.syslogAppender = syslogAppender;
     }
 
 
-    static SimpleAuditLogWriter create(File logFileDir) {
-        SimpleAuditLogWriter writer = new SimpleAuditLogWriter(logFileDir);
+    static SimpleAuditLogWriter create(File logFileDir, SyslogAppender syslogAppender) {
+        SimpleAuditLogWriter writer = new SimpleAuditLogWriter(logFileDir, syslogAppender);
         writer.createNewLogFile();
         return writer;
     }
@@ -79,6 +82,7 @@ class SimpleAuditLogWriter implements LogWriter<SimpleAuditLogWriterRecord> {
     public void logRecord(SimpleAuditLogWriterRecord record) {
         try {
             currentRandomAccessFile.write(record.message);
+            syslogAppender.logMessage(record.message);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

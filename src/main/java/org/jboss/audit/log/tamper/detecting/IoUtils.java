@@ -31,7 +31,7 @@ import java.io.PrintWriter;
  */
 public class IoUtils {
 
-    static void safeClose(Closeable closeable) {
+    public static void safeClose(Closeable closeable) {
         if (closeable == null) {
             return;
         }
@@ -41,7 +41,7 @@ public class IoUtils {
         }
     }
 
-    static void printStackTraceToOutputStream(Throwable t, OutputStream out) {
+    public static void printStackTraceToOutputStream(Throwable t, OutputStream out) {
         PrintWriter writer = new PrintWriter(out);
         try {
             t.printStackTrace(writer);

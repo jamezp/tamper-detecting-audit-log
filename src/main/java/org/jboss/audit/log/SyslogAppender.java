@@ -19,32 +19,33 @@
  * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
  */
-package org.jboss.audit.log.simple;
+package org.jboss.audit.log;
 
-import java.io.File;
+import java.util.logging.Level;
 
-import org.jboss.audit.log.AuditLogger;
-import org.jboss.audit.log.AuditLoggerBuilder;
+import javax.xml.bind.DatatypeConverter;
+
+import org.jboss.logmanager.ExtLogRecord;
+import org.jboss.logmanager.handlers.SyslogHandler;
 
 /**
- *
+ * Internal class, create using {@link AuditLoggerBuilder#createSyslogAppenderBuilder()
+ * }
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-public class SimpleAuditLoggerBuilder extends AuditLoggerBuilder<SimpleAuditLoggerBuilder> {
+public class SyslogAppender {
 
-    private SimpleAuditLoggerBuilder(File logFileDir) {
-        super(logFileDir);
+    final SyslogHandler syslogHandler;
+    final Level level;
+
+    SyslogAppender(SyslogHandler syslogHandler, Level level) {
+        this.syslogHandler = syslogHandler;
+        this.level = level;
     }
 
-    public static SimpleAuditLoggerBuilder createBuilder(File logFileDir) {
-        return new SimpleAuditLoggerBuilder(logFileDir);
-    }
-
-
-    public AuditLogger buildLogger() {
-        //TODO make heartbeat configurable
-        int heartbeat = 1;
-        AuditLogger simpleAuditLogger = SimpleAuditLogger.create(logFileDir, syslogAppender, heartbeat);
-        return simpleAuditLogger;
+    public void logMessage(byte[] message) {
+        //Syslog doesn't like things like line breaks in the text, so write a hex encoded string
+        String formattedBytes = DatatypeConverter.printHexBinary(message);
+        syslogHandler.doPublish(new ExtLogRecord(level, formattedBytes, SyslogAppender.class.getName()));
     }
 }

@@ -336,7 +336,7 @@ public class SecureLoggerTestCase {
 
         //File file = new LogFileNameUtil().getPreviousLogFilename(null);
 
-        SecureLoggerBuilder builder = createLogBuilder(false);
+        SecureAuditLoggerBuilder builder = createLogBuilder(false);
         builder.verifyLogFile(new SystemOutOutputStream(), LogRecordBodyOutputter.RAW, null);
     }
 
@@ -411,7 +411,7 @@ public class SecureLoggerTestCase {
     public void testViewLogEncrypted() throws Exception {
         //The key thing here is that the viewer cannot verify the log file but it only needs the viewing p12 private key
         //matching the viewing certificate
-        SecureLoggerBuilder builder = createLogBuilder(true, RecoverAction.CREATE_TRUSTED_LOCATION);
+        SecureAuditLoggerBuilder builder = createLogBuilder(true, RecoverAction.CREATE_TRUSTED_LOCATION);
         AuditLogger logger = builder.buildLogger();
         try {
             logger.logMessage("Hello".getBytes());
@@ -460,12 +460,12 @@ public class SecureLoggerTestCase {
     }
 
     private AuditLogger createLogger(RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
-        SecureLoggerBuilder builder = createLogBuilder(false, recoverActions);
+        SecureAuditLoggerBuilder builder = createLogBuilder(false, recoverActions);
         return builder.buildLogger();
     }
 
-    private SecureLoggerBuilder createLogBuilder(boolean encrypted, RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
-        SecureLoggerBuilder builder = SecureLoggerBuilder.createBuilder(testLogDir)
+    private SecureAuditLoggerBuilder createLogBuilder(boolean encrypted, RecoverAction...recoverActions) throws KeyStoreInitializationException, RecoverableException, IOException, URISyntaxException, ValidationException {
+        SecureAuditLoggerBuilder builder = SecureAuditLoggerBuilder.createBuilder(testLogDir)
                 .signingStoreBuilder()
                     .setPath(getResourceFile("test-sign.keystore"))
                     .setKeyName("audit-sign")

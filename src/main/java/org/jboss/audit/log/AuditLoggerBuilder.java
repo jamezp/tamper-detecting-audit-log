@@ -22,17 +22,81 @@
 package org.jboss.audit.log;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.InetAddress;
+
+import org.jboss.logmanager.Level;
+import org.jboss.logmanager.handlers.SyslogHandler;
+import org.jboss.logmanager.handlers.SyslogHandler.Facility;
+import org.jboss.logmanager.handlers.SyslogHandler.SyslogType;
 
 /**
  *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
-public class AuditLoggerBuilder {
+public class AuditLoggerBuilder<T extends AuditLoggerBuilder<T>> {
 
     protected final File logFileDir;
+    protected volatile SyslogAppender syslogAppender;
 
     protected AuditLoggerBuilder(File logFileDir) {
         this.logFileDir = logFileDir;
     }
 
+    public SyslogAppenderBuilder<T> createSyslogAppenderBuilder(){
+        return new SyslogAppenderBuilder<T>();
+    }
+
+    public class SyslogAppenderBuilder<T extends AuditLoggerBuilder<T>> {
+
+        private InetAddress serverAddress = SyslogHandler.DEFAULT_ADDRESS;
+        private int port = SyslogHandler.DEFAULT_PORT;
+        private String appName;
+        private String hostname;
+        private Facility facility = SyslogHandler.DEFAULT_FACILITY;
+        private SyslogType syslogType;
+        private Level level = Level.INFO;
+
+        public SyslogAppenderBuilder<T> setServerAddress(InetAddress serverAddress){
+            this.serverAddress = serverAddress;
+            return this;
+        }
+
+        public SyslogAppenderBuilder<T> setPort(int port){
+            this.port = port;
+            return this;
+        }
+
+        //TODO this is not configurable in the underlying SyslogHandler
+        public SyslogAppenderBuilder<T> setAppName(String appName) {
+            this.appName = appName;
+            return this;
+        }
+
+        public SyslogAppenderBuilder<T> setFacility(Facility facility){
+            this.facility = facility;
+            return this;
+        }
+
+        public SyslogAppenderBuilder<T> setSyslogType(SyslogType syslogType){
+            this.syslogType = syslogType;
+            return this;
+        }
+
+        public SyslogAppenderBuilder<T> setLogLevel(Level level){
+            this.level = level;
+            return this;
+        }
+
+        public T done() {
+            SyslogHandler syslogHandler;
+            try {
+                syslogHandler = new SyslogHandler(serverAddress, port, facility, syslogType, hostname);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            syslogAppender = new SyslogAppender(syslogHandler, level);
+            return (T)AuditLoggerBuilder.this;
+        }
+    }
 }
