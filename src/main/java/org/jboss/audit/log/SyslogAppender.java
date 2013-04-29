@@ -23,10 +23,8 @@ package org.jboss.audit.log;
 
 import java.util.logging.Level;
 
-import javax.xml.bind.DatatypeConverter;
-
+import org.jboss.logmanager.ExtHandler;
 import org.jboss.logmanager.ExtLogRecord;
-import org.jboss.logmanager.handlers.SyslogHandler;
 
 /**
  * Internal class, create using {@link AuditLoggerBuilder#createSyslogAppenderBuilder()
@@ -35,17 +33,17 @@ import org.jboss.logmanager.handlers.SyslogHandler;
  */
 public class SyslogAppender {
 
-    final SyslogHandler syslogHandler;
+    final ExtHandler syslogHandler;
     final Level level;
 
-    SyslogAppender(SyslogHandler syslogHandler, Level level) {
+    SyslogAppender(ExtHandler syslogHandler, Level level) {
         this.syslogHandler = syslogHandler;
         this.level = level;
     }
 
     public void logMessage(byte[] message) {
         //Syslog doesn't like things like line breaks in the text, so write a hex encoded string
-        String formattedBytes = DatatypeConverter.printHexBinary(message);
-        syslogHandler.doPublish(new ExtLogRecord(level, formattedBytes, SyslogAppender.class.getName()));
+        String formattedBytes = new String(message); //DatatypeConverter.printHexBinary(message);
+        syslogHandler.publish(new ExtLogRecord(level, formattedBytes, SyslogAppender.class.getName()));
     }
 }

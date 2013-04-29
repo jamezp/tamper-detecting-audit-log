@@ -22,11 +22,12 @@
 package org.jboss.audit.log.tamper.detecting;
 
 import java.io.File;
-import java.util.Date;
+import java.net.InetAddress;
 import java.util.concurrent.CountDownLatch;
 
 import org.jboss.audit.log.AuditLogger;
 import org.jboss.audit.log.simple.SimpleAuditLoggerBuilder;
+import org.jboss.logmanager.Level;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -65,13 +66,16 @@ public class SimpleAuditLoggerTestCase {
         AuditLogger logger =
                 SimpleAuditLoggerBuilder.createBuilder(testLogDir)
                     .createSyslogAppenderBuilder()
+                        .setServerAddress(InetAddress.getByName("192.168.1.25"))
                         .setAppName("Testing123")
+                        .setLogLevel(Level.WARN)
+                        //.setTcp()
                         //.setSyslogType(SyslogType.RFC3164) //This is the BSD/Mac version
                         .done()
                         .buildLogger();
 
         try {
-            String msg = "Hello from Kabir " + new Date().toString() + "\n this is a new line";
+            String msg = "Hello from Kabir " + System.currentTimeMillis() + "\n this is a new line";
             logger.logMessage(msg.getBytes());
         } finally {
             closeLog(logger);

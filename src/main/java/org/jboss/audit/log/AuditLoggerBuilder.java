@@ -25,6 +25,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 
+import org.jboss.logmanager.ExtHandler;
 import org.jboss.logmanager.Level;
 import org.jboss.logmanager.handlers.SyslogHandler;
 import org.jboss.logmanager.handlers.SyslogHandler.Facility;
@@ -53,6 +54,7 @@ public class AuditLoggerBuilder<T extends AuditLoggerBuilder<T>> {
         private int port = SyslogHandler.DEFAULT_PORT;
         private String appName;
         private String hostname;
+        private boolean tcp;
         private Facility facility = SyslogHandler.DEFAULT_FACILITY;
         private SyslogType syslogType;
         private Level level = Level.INFO;
@@ -88,14 +90,32 @@ public class AuditLoggerBuilder<T extends AuditLoggerBuilder<T>> {
             return this;
         }
 
+        public SyslogAppenderBuilder<T> setTcp(){
+            this.tcp = true;
+            return this;
+        }
+
         public T done() {
-            SyslogHandler syslogHandler;
+            ExtHandler extHandler;
             try {
-                syslogHandler = new SyslogHandler(serverAddress, port, facility, syslogType, hostname);
+                if (!tcp) {
+                    SyslogHandler syslogHandler = new SyslogHandler(serverAddress, port, facility, syslogType, hostname);
+                    if (appName != null) {
+                        syslogHandler.setAppName(appName);
+                    }
+                    extHandler = syslogHandler;
+                } else {
+                    //TODO set the Facility and the SyslogType
+                    TcpSyslogHandler syslogHandler = new TcpSyslogHandler(serverAddress, port, Enum.valueOf(TcpSyslogHandler.Facility.class, facility.name()), Enum.valueOf(TcpSyslogHandler.SyslogType.class, syslogType.name()), hostname);
+                    if (appName != null) {
+                        syslogHandler.setAppName(appName);
+                    }
+                    extHandler = syslogHandler;
+                }
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            syslogAppender = new SyslogAppender(syslogHandler, level);
+            syslogAppender = new SyslogAppender(extHandler, level);
             return (T)AuditLoggerBuilder.this;
         }
     }
