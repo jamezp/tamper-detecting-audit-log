@@ -22,7 +22,14 @@
 package org.jboss.audit.log.syslog4j;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.PublicKey;
 
+import junit.framework.Assert;
+
+import org.jboss.audit.log.tamper.detecting.KeyStoreInitializationException;
 import org.junit.Test;
 import org.productivity.java.syslog4j.Syslog;
 import org.productivity.java.syslog4j.SyslogIF;
@@ -68,5 +75,46 @@ public class Syslog4jTestCase {
         System.out.print("Waiting for finish");
     }
 
+    @Test
+    public void testRemoteTlsWithClientAuthentication() throws Exception {
 
+        System.setProperty("javax.net.debug", "all");
+
+        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 10514);
+        config.setTrustStore(new File(this.getClass().getResource("cacerts").toURI()).getAbsolutePath());
+        config.setTrustStorePassword("changeit");
+        config.setKeyStore(new File(this.getClass().getResource("client/client-keystore.jks").toURI()).getAbsolutePath());
+        config.setKeyStorePassword("changeit");
+        //config.setKeyStore(new File(this.getClass().getResource("client/syslog-client-cert.pem").toURI()).getAbsolutePath());
+        config.setThreaded(false);
+        SyslogIF syslog = Syslog.createInstance("sslTcp", config);
+        //syslog.warn("Test TCP Remote Syslog with authentication " + System.currentTimeMillis() + "\n\tnew line");
+        syslog.warn("Test TCP Remote Syslog with authentication");
+        syslog.flush();
+        syslog.shutdown();
+        System.out.print("Waiting for finish");
+    }
+
+    @Test
+    public void testLoadKeystore() throws Exception {
+        File file = new File(this.getClass().getResource("client/syslog-client-cert.pem").toURI());
+        Assert.assertTrue(file.exists());
+        final InputStream in;
+        try {
+             in = new FileInputStream(file);
+        } catch (IOException e) {
+            throw new KeyStoreInitializationException(e);
+        }
+        try{
+            java.security.cert.CertificateFactory cf = null;
+            cf = java.security.cert.CertificateFactory.getInstance("X.509");
+            java.security.cert.Certificate cert = cf.generateCertificate(in);
+            PublicKey key = cert.getPublicKey();
+        } catch (Exception e) {
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException)e;
+            }
+            throw new KeyStoreInitializationException(e);
+        }
+    }
 }
