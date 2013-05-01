@@ -68,6 +68,7 @@ public class Syslog4jTestCase {
         SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 10514);
         config.setTrustStore(new File(this.getClass().getResource("cacerts").toURI()).getAbsolutePath());
         config.setTrustStorePassword("changeit");
+        config.setThreaded(false);
         SyslogIF syslog = Syslog.createInstance("sslTcp", config);
         syslog.warn("Test TCP Remote Syslog " + System.currentTimeMillis() + "\n\tnew line");
         syslog.flush();

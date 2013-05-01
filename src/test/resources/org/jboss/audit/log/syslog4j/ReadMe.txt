@@ -16,7 +16,7 @@ $InputTCPServerStreamDriverAuthMode anon
 $InputTCPServerRun 10514 # start up listener at port 10514
 -----
 cacerts is used as the client's truststore and was created by
-$keytool -import -alias ca -file ~server/ca.pem -keystore cacerts
+$keytool -import -alias ca -file server/ca.pem -keystore cacerts
 'changeit' is the trust store password
 
 ---- 
