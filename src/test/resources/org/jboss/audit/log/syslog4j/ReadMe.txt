@@ -1,12 +1,12 @@
 *** To enable basic encrypted communication ***
 ===============================================
 
-Followed the instructions at http://emo.sourceforge.net/cert-login-howto.html while logged in as root to
+Followed the instructions at http://www.rsyslog.com/doc/rsyslog_secure_tls.html while logged in as root to
 1) Set up the ca certificate and private key
 2) Set up the server's certificate and key
 3) Add the following to server's /etc/rsyslog.conf. Putting the pem files anywhere else, caused big problems with the text 
-'rsyslogd-2068: could not load module '/lib64/rsyslog/lmnsd_gtls.so', rsyslog error -2078' which mean there are permission
-problems reading the certificates/keys.
+'rsyslogd-2068: could not load module '/lib64/rsyslog/lmnsd_gtls.so', rsyslog error -2078' which as long as you have installed rsyslog-gnutls 
+means there are permission problems reading the certificates/keys.
 
    # Provides TLS syslog reception
    $ModLoad imtcp #Load tcp driver
@@ -32,3 +32,6 @@ problems reading the certificates/keys.
    $keytool -importkeystore -deststorepass changeit -destkeypass changeit -destkeystore client.keystore -srckeystore client.p12 -srcstoretype PKCS12 -srcstorepass test -alias syslog-client
 3) Change $InputTCPServerStreamDriverAuthMode from 'anon' to either 'x509/certvalid' (to just check that the client has a cert) or 'x509/name' (to check allowed names,
    in which case I think you need $InputTCPServerStreamDriverPermittedPeer entries)
+
+   
+http://emo.sourceforge.net/cert-login-howto.html contains some briefer 
