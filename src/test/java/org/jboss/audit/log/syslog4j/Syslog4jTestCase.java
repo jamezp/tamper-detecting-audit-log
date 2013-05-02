@@ -33,6 +33,7 @@ import org.jboss.audit.log.tamper.detecting.KeyStoreInitializationException;
 import org.junit.Test;
 import org.productivity.java.syslog4j.Syslog;
 import org.productivity.java.syslog4j.SyslogIF;
+import org.productivity.java.syslog4j.impl.net.tcp.TCPNetSyslogConfig;
 import org.productivity.java.syslog4j.impl.net.tcp.ssl.SSLTCPNetSyslogConfig;
 
 /**
@@ -57,6 +58,7 @@ public class Syslog4jTestCase {
     public void testRemoteTcp() {
         SyslogIF syslog = Syslog.getInstance("tcp");
         syslog.getConfig().setHost("192.168.1.25");
+        ((TCPNetSyslogConfig)syslog.getConfig()).setThreaded(false);
         syslog.warn("Test TCP Remote Syslog " + System.currentTimeMillis() + "\n\tnew line");
         syslog.flush();
         syslog.shutdown();
@@ -65,7 +67,9 @@ public class Syslog4jTestCase {
 
     @Test
     public void testRemoteTls() throws Exception {
-        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 10514);
+        System.setProperty("javax.net.debug", "all");
+
+        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 514);
         config.setTrustStore(new File(this.getClass().getResource("cacerts").toURI()).getAbsolutePath());
         config.setTrustStorePassword("changeit");
         config.setThreaded(false);
@@ -81,16 +85,15 @@ public class Syslog4jTestCase {
 
         System.setProperty("javax.net.debug", "all");
 
-        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 10514);
+        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 514);
         config.setTrustStore(new File(this.getClass().getResource("cacerts").toURI()).getAbsolutePath());
         config.setTrustStorePassword("changeit");
-        config.setKeyStore(new File(this.getClass().getResource("client/client-keystore.jks").toURI()).getAbsolutePath());
+        config.setKeyStore(new File(this.getClass().getResource("client/client.keystore").toURI()).getAbsolutePath());
         config.setKeyStorePassword("changeit");
-        //config.setKeyStore(new File(this.getClass().getResource("client/syslog-client-cert.pem").toURI()).getAbsolutePath());
         config.setThreaded(false);
+        config.setWriteRetries(0);
         SyslogIF syslog = Syslog.createInstance("sslTcp", config);
-        //syslog.warn("Test TCP Remote Syslog with authentication " + System.currentTimeMillis() + "\n\tnew line");
-        syslog.warn("Test TCP Remote Syslog with authentication");
+        syslog.warn("Test TCP Remote Syslog with authentication " + System.currentTimeMillis() + "\n\tnew line");
         syslog.flush();
         syslog.shutdown();
         System.out.print("Waiting for finish");
