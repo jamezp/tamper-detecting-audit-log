@@ -27,9 +27,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.PublicKey;
 
-import junit.framework.Assert;
+import javax.net.ssl.SSLContext;
 
+import junit.framework.Assert;
 import org.jboss.audit.log.tamper.detecting.KeyStoreInitializationException;
+import org.jboss.logmanager.Logger;
+import org.jboss.logmanager.handlers.SyslogHandler;
+import org.jboss.logmanager.handlers.SyslogHandler.SocketType;
 import org.junit.Test;
 import org.productivity.java.syslog4j.Syslog;
 import org.productivity.java.syslog4j.SyslogIF;
@@ -37,7 +41,6 @@ import org.productivity.java.syslog4j.impl.net.tcp.TCPNetSyslogConfig;
 import org.productivity.java.syslog4j.impl.net.tcp.ssl.SSLTCPNetSyslogConfig;
 
 /**
- *
  * @author <a href="kabir.khan@jboss.com">Kabir Khan</a>
  */
 public class Syslog4jTestCase {
@@ -50,15 +53,15 @@ public class Syslog4jTestCase {
     @Test
     public void testRemoteUdp() {
         SyslogIF syslog = Syslog.getInstance("udp");
-        syslog.getConfig().setHost("192.168.1.25");
+        syslog.getConfig().setHost(getHostName());
         syslog.warn("Test UDP Remote Syslog " + System.currentTimeMillis() + "\n\tnew line");
     }
 
     @Test
     public void testRemoteTcp() {
         SyslogIF syslog = Syslog.getInstance("tcp");
-        syslog.getConfig().setHost("192.168.1.25");
-        ((TCPNetSyslogConfig)syslog.getConfig()).setThreaded(false);
+        syslog.getConfig().setHost(getHostName());
+        ((TCPNetSyslogConfig) syslog.getConfig()).setThreaded(false);
         syslog.warn("Test TCP Remote Syslog " + System.currentTimeMillis() + "\n\tnew line");
         syslog.flush();
         syslog.shutdown();
@@ -69,7 +72,7 @@ public class Syslog4jTestCase {
     public void testRemoteTls() throws Exception {
         System.setProperty("javax.net.debug", "all");
 
-        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 514);
+        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig(getHostName(), 514);
         config.setTrustStore(new File(this.getClass().getResource("cacerts").toURI()).getAbsolutePath());
         config.setTrustStorePassword("changeit");
         config.setThreaded(false);
@@ -81,11 +84,29 @@ public class Syslog4jTestCase {
     }
 
     @Test
+    public void testJbossTls() throws Exception {
+        System.setProperty("javax.net.debug", "all");
+
+        System.setProperty("javax.net.ssl.trustStore", new File(this.getClass().getResource("cacerts").toURI()).getAbsolutePath());
+        System.setProperty("javax.net.ssl.trustStorePassword", "changeit");
+
+        final SyslogHandler handler = new SyslogHandler();
+        handler.setSocketType(SocketType.SSL_TCP);
+        handler.setHostname("localhost");
+        final Logger logger = Logger.getLogger("org.wildfly.audit.log");
+        logger.addHandler(handler);
+        logger.warning("Test TCP Remote Syslog " + System.currentTimeMillis() + "\n\tnew line");
+        handler.flush();
+        handler.close();
+        System.out.print("Waiting for finish");
+    }
+
+    @Test
     public void testRemoteTlsWithClientAuthentication() throws Exception {
 
         System.setProperty("javax.net.debug", "all");
 
-        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig("192.168.1.25", 514);
+        SSLTCPNetSyslogConfig config = new SSLTCPNetSyslogConfig(getHostName(), 514);
         config.setTrustStore(new File(this.getClass().getResource("cacerts").toURI()).getAbsolutePath());
         config.setTrustStorePassword("changeit");
         config.setKeyStore(new File(this.getClass().getResource("client/client.keystore").toURI()).getAbsolutePath());
@@ -101,24 +122,28 @@ public class Syslog4jTestCase {
 
     @Test
     public void testLoadKeystore() throws Exception {
-        File file = new File(this.getClass().getResource("client/syslog-client-cert.pem").toURI());
+        File file = new File(this.getClass().getResource("client/client-cert.pem").toURI());
         Assert.assertTrue(file.exists());
         final InputStream in;
         try {
-             in = new FileInputStream(file);
+            in = new FileInputStream(file);
         } catch (IOException e) {
             throw new KeyStoreInitializationException(e);
         }
-        try{
+        try {
             java.security.cert.CertificateFactory cf = null;
             cf = java.security.cert.CertificateFactory.getInstance("X.509");
             java.security.cert.Certificate cert = cf.generateCertificate(in);
             PublicKey key = cert.getPublicKey();
         } catch (Exception e) {
             if (e instanceof RuntimeException) {
-                throw (RuntimeException)e;
+                throw (RuntimeException) e;
             }
             throw new KeyStoreInitializationException(e);
         }
+    }
+
+    protected String getHostName() {
+        return System.getProperty("syslog.hostname", "localhost");
     }
 }

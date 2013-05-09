@@ -5,6 +5,12 @@ target/
 .settings
 .DS_Store
 
+# IDEA project
+*.ipr
+*.iws
+*.iml
+.idea
+
 # Package Files #
 *.jar
 *.war
